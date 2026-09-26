@@ -1,0 +1,20 @@
+# Environments
+.env
+.env.local
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+
+# Storage
+uploads/*
+!uploads/.gitkeep
+!uploads/listings/.gitkeep
+!uploads/users/.gitkeep
+!uploads/blogs/.gitkeep
+
+# System
+.DS_Store
+*.sqlite3
+*.db

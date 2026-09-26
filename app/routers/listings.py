@@ -1,0 +1,293 @@
+import json
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
+from app.db.models.listing import Listing, ListingImage
+from app.db.models.user import User
+from app.schemas.common import APIResponse, MessageResponse
+from app.schemas.listing import (
+    ListingRead, ListingCreate, ListingUpdate, ListingStatusUpdate, ListingCountsResponse
+)
+from app.services.storage_service import storage_service
+
+router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
+
+
+@router.get("/counts", response_model=ListingCountsResponse)
+def get_listing_counts(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    counts = db.query(Listing.status, func.count(Listing.id)).group_by(Listing.status).all()
+    count_dict = {
+        "pending": 0,
+        "approved": 0,
+        "suspended": 0,
+        "sold": 0,
+        "rented": 0,
+        "deleted": 0
+    }
+    for st, count in counts:
+        if st in count_dict:
+            count_dict[st] = count
+    return ListingCountsResponse(status="success", data=count_dict)
+
+
+@router.get("", response_model=dict)
+def get_listings(
+    status: Optional[str] = Query("approved"),
+    city: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    ref_code: Optional[str] = Query(None),
+    ref_name: Optional[str] = Query(None),
+    user_id: Optional[int] = Query(None),
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(Listing)
+
+    # Filter by user_id if requested (e.g. My Listings in Account)
+    if user_id:
+        query = query.filter(Listing.user_id == user_id)
+
+    # Status filter
+    if status and status.lower() != "all":
+        query = query.filter(Listing.status == status.lower())
+    elif not user_id and (not user or user.role.lower() != "admin"):
+        # Unauthenticated or non-admin users default to approved when not querying specific user
+        query = query.filter(Listing.status == "approved")
+
+    # City filter
+    if city:
+        query = query.filter(Listing.location.ilike(f"%{city.strip()}%"))
+
+    # Search filter (title / description / location)
+    if search:
+        s_filter = f"%{search.strip()}%"
+        query = query.filter(
+            (Listing.title.ilike(s_filter)) |
+            (Listing.location.ilike(s_filter)) |
+            (Listing.description.ilike(s_filter))
+        )
+
+    # Reference code filter
+    if ref_code:
+        query = query.filter(Listing.reference_code == ref_code.strip())
+
+    listings = query.order_by(Listing.id.desc()).all()
+
+    # Build reference summary counts for admin
+    ref_summary = []
+    if user and user.role.lower() == "admin":
+        summary_query = db.query(
+            Listing.reference_code,
+            func.count(Listing.id).label("total")
+        ).filter(Listing.reference_code.isnot(None))\
+         .group_by(Listing.reference_code).all()
+        ref_summary = [{"reference_code": r[0], "total": r[1]} for r in summary_query if r[0]]
+
+    return {
+        "status": "success",
+        "data": [ListingRead.model_validate(l).model_dump() for l in listings],
+        "ref_summary": ref_summary
+    }
+
+
+@router.get("/{listing_id}", response_model=APIResponse[ListingRead])
+def get_listing(listing_id: int, db: Session = Depends(get_db)):
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+
+
+@router.post("", response_model=APIResponse[ListingRead])
+async def create_listing(
+    title: str = Form(...),
+    location: str = Form(...),
+    price: float = Form(0.0),
+    description: Optional[str] = Form(None),
+    owner_name: str = Form(...),
+    owner_role: str = Form("Owner"),
+    reference_code: Optional[str] = Form(None),
+    form_data: Optional[str] = Form(None),
+    photos: List[UploadFile] = File(default=[]),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Rule 1: Validate title words length (<= 50 words)
+    words = title.strip().split()
+    if len(words) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Listing title cannot exceed 50 words. Current words: {len(words)}"
+        )
+
+    # Parse JSON form_data if provided
+    parsed_form_data = None
+    if form_data:
+        try:
+            parsed_form_data = json.loads(form_data)
+        except Exception:
+            parsed_form_data = form_data
+
+    # Initial status: Admin gets approved by default if desired, user gets pending
+    init_status = "approved" if current_user.role.lower() == "admin" else "pending"
+
+    listing = Listing(
+        user_id=current_user.id,
+        title=title.strip(),
+        location=location.strip(),
+        price=price,
+        description=description,
+        owner_name=owner_name.strip(),
+        owner_role=owner_role.strip(),
+        reference_code=reference_code.strip() if reference_code else None,
+        status=init_status,
+        verified=0,
+        form_data=parsed_form_data
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+
+    # Save photos if any
+    for idx, photo in enumerate(photos[:10]):
+        if photo.filename:
+            rel_path, orig_name, f_size, m_type = await storage_service.validate_and_save_listing_image(
+                listing.id, photo
+            )
+            img = ListingImage(
+                listing_id=listing.id,
+                file_path=rel_path,
+                original_filename=orig_name,
+                mime_type=m_type,
+                file_size=f_size,
+                sort_order=idx
+            )
+            db.add(img)
+
+    db.commit()
+    db.refresh(listing)
+    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+
+
+@router.patch("/{listing_id}", response_model=APIResponse[ListingRead])
+@router.post("/{listing_id}", response_model=APIResponse[ListingRead])
+async def update_listing(
+    listing_id: int,
+    title: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    price: Optional[float] = Form(None),
+    description: Optional[str] = Form(None),
+    owner_name: Optional[str] = Form(None),
+    owner_role: Optional[str] = Form(None),
+    reference_code: Optional[str] = Form(None),
+    photos: List[UploadFile] = File(default=[]),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+
+    # Authorization: Owner or Admin
+    if listing.user_id != current_user.id and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to edit this listing.")
+
+    if title is not None:
+        words = title.strip().split()
+        if len(words) > 50:
+            raise HTTPException(status_code=400, detail="Listing title cannot exceed 50 words.")
+        listing.title = title.strip()
+    if location is not None:
+        listing.location = location.strip()
+    if price is not None:
+        listing.price = price
+    if description is not None:
+        listing.description = description
+    if owner_name is not None:
+        listing.owner_name = owner_name.strip()
+    if owner_role is not None:
+        listing.owner_role = owner_role.strip()
+    if reference_code is not None:
+        listing.reference_code = reference_code.strip() if reference_code else None
+
+    # Handle additional photos
+    start_order = len(listing.images)
+    for idx, photo in enumerate(photos[:10]):
+        if photo.filename:
+            rel_path, orig_name, f_size, m_type = await storage_service.validate_and_save_listing_image(
+                listing.id, photo
+            )
+            img = ListingImage(
+                listing_id=listing.id,
+                file_path=rel_path,
+                original_filename=orig_name,
+                mime_type=m_type,
+                file_size=f_size,
+                sort_order=start_order + idx
+            )
+            db.add(img)
+
+    db.commit()
+    db.refresh(listing)
+    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+
+
+@router.post("/{listing_id}/status", response_model=MessageResponse)
+def update_listing_status(
+    listing_id: int,
+    req: ListingStatusUpdate,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+
+    action = req.action.lower()
+    if action == "approve":
+        listing.status = "approved"
+    elif action == "pending":
+        listing.status = "pending"
+    elif action == "suspended":
+        listing.status = "suspended"
+    elif action == "sold":
+        listing.status = "sold"
+    elif action == "rented":
+        listing.status = "rented"
+    elif action == "delete":
+        listing.status = "deleted"
+    elif action == "stamp":
+        listing.verified = 1
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid action '{req.action}'.")
+
+    db.commit()
+    return MessageResponse(status="success", message=f"Listing status updated via action '{action}'.")
+
+
+@router.delete("/{listing_id}", response_model=MessageResponse)
+@router.post("/{listing_id}/delete", response_model=MessageResponse)
+def delete_listing(
+    listing_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+
+    if listing.user_id != current_user.id and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this listing.")
+
+    # Physical file cleanup
+    storage_service.delete_listing_folder(listing.id)
+
+    db.delete(listing)
+    db.commit()
+    return MessageResponse(status="success", message="Listing deleted successfully.")
