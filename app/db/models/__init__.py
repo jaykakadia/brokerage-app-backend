@@ -9,6 +9,9 @@ from app.db.models.lead import LeadReveal
 from app.db.models.wishlist import Wishlist
 from app.db.models.setting import SystemSetting
 from app.db.models.otp import OtpVerification
+from app.db.models.employee import Employee
+from app.db.models.role_limit import RoleLimit
+from app.db.models.blog import Blog
 
 __all__ = [
     "Base",
@@ -23,4 +26,8 @@ __all__ = [
     "Wishlist",
     "SystemSetting",
     "OtpVerification",
+    "Employee",
+    "RoleLimit",
+    "Blog",
 ]
+
