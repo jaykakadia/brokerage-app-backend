@@ -23,7 +23,12 @@ def get_wishlist(
     If ids_only is True, returns a compact list of IDs for button state matching.
     """
     if ids_only:
-        records = db.query(Wishlist.listing_id).filter(Wishlist.user_id == current_user.id).all()
+        records = (
+            db.query(Wishlist.listing_id)
+            .join(Listing, Wishlist.listing_id == Listing.id)
+            .filter(Wishlist.user_id == current_user.id, Listing.status != "deleted")
+            .all()
+        )
         ids = [r[0] for r in records]
         return {"status": "success", "ids": ids, "data": ids}
 
@@ -37,7 +42,7 @@ def get_wishlist(
 
     data = []
     for w in records:
-        if w.listing:
+        if w.listing and w.listing.status != "deleted":
             data.append(ListingRead.model_validate(w.listing).model_dump())
 
     return {"status": "success", "data": data}
@@ -53,7 +58,7 @@ def toggle_wishlist(
     Toggles a listing in the user's wishlist.
     Adds if not present; removes if already present.
     """
-    listing = db.query(Listing).filter(Listing.id == req.listing_id).first()
+    listing = db.query(Listing).filter(Listing.id == req.listing_id, Listing.status != "deleted").first()
     if not listing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

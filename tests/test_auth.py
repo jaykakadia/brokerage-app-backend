@@ -61,14 +61,19 @@ def test_expired_jwt(client, test_user):
 
 
 def test_otp_flow(client):
+    from app.services.mail_service import mail_service
     send_res = client.post("/api/v1/auth/send-otp", json={
         "email": "otpuser@example.com",
         "action": "register"
     })
     assert send_res.status_code == 200
-    msg = send_res.json()["message"]
-    assert "Dev Code:" in msg
-    otp_code = msg.split("Dev Code:")[1].strip(" )")
+    assert "OTP sent to your email" in send_res.json()["message"]
+
+    # Retrieve sent OTP from mail service
+    assert len(mail_service.sent_emails) > 0
+    last_mail = mail_service.sent_emails[-1]
+    # Subject: "Your TradeCall Verification Code: 123456"
+    otp_code = last_mail["subject"].split(":")[-1].strip()
 
     # Verify OTP
     verify_res = client.post("/api/v1/auth/verify-otp", json={

@@ -62,7 +62,6 @@ def test_otp_security_and_limits(client, db_session):
 
     # 6. Expiration enforcement: Expired OTP is rejected
     expired_email = "expired@example.com"
-    # Fast forward expiration
     exp_code = "112233"
     hashed = auth_service._hash_otp(expired_email, exp_code)
     from app.services.auth_service import OTPRecord
@@ -70,3 +69,22 @@ def test_otp_security_and_limits(client, db_session):
     auth_service._otp_store[(expired_email, "register")] = OTPRecord(hashed, "register", past_time)
 
     assert auth_service.verify_otp(expired_email, "register", exp_code) is False
+
+    # 7. Max failed verification attempts lock out the OTP
+    brute_email = "brute_force@example.com"
+    real_code = auth_service.generate_and_store_otp(brute_email, "register", db=db_session)
+    for _ in range(5):
+        auth_service.verify_otp(brute_email, "register", "000000", consume=False)
+
+    with pytest.raises(HTTPException) as exc_max:
+        auth_service.verify_otp(brute_email, "register", "000000", consume=False)
+    assert exc_max.value.status_code == 429
+    assert "Maximum verification attempts exceeded" in exc_max.value.detail
+
+    # 8. Verify OTP is securely hashed in storage
+    from app.db.models.otp import OtpVerification
+    db_record = db_session.query(OtpVerification).filter(OtpVerification.email == brute_email).first()
+    assert db_record is not None
+    assert db_record.otp_hash != real_code
+    assert len(db_record.otp_hash) == 64  # SHA-256 hex string
+

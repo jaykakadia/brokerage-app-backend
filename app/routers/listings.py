@@ -1,4 +1,6 @@
+import os
 import json
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
@@ -141,6 +143,55 @@ async def create_listing(
         except Exception:
             parsed_form_data = form_data
 
+    # Validate uploaded photos upfront
+    for photo in photos[:10]:
+        if photo.filename:
+            ext = os.path.splitext(photo.filename)[1].lower()
+            if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unsupported file extension '{ext}'. Allowed extensions: ['.jpg', '.jpeg', '.png', '.webp']"
+                )
+
+    # Enforce listing limits for non-admin users
+    if current_user.role.lower() != "admin":
+        user_active_listings = db.query(Listing).filter(
+            Listing.user_id == current_user.id,
+            Listing.status != "deleted"
+        ).count()
+
+        # Check if user has an active purchased plan
+        now = datetime.now(timezone.utc)
+        has_active_plan = current_user.plan_id and (
+            not current_user.plan_expires_at or current_user.plan_expires_at > now
+        )
+
+        if has_active_plan and current_user.listing_limit > 0:
+            allowed_limit = current_user.listing_limit
+        else:
+            from app.db.models.role_limit import RoleLimit
+            rl = db.query(RoleLimit).filter(RoleLimit.role == current_user.role).first()
+            allowed_limit = rl.max_listings if rl else 0
+
+        # Only enforce when limit is set > 0
+        if allowed_limit and allowed_limit > 0 and user_active_listings >= allowed_limit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You have reached your maximum listing limit ({allowed_limit}) for {current_user.role} accounts. Please upgrade your plan to post more listings."
+            )
+
+    # Link field associate employee if reference code provided
+    ref_code_clean = reference_code.strip().upper() if reference_code else None
+    employee_id = None
+    if ref_code_clean:
+        from app.db.models.employee import Employee
+        emp = db.query(Employee).filter(
+            Employee.reference_code == ref_code_clean,
+            Employee.status == "active"
+        ).first()
+        if emp:
+            employee_id = emp.id
+
     # Initial status: Admin gets approved by default if desired, user gets pending
     init_status = "approved" if current_user.role.lower() == "admin" else "pending"
 
@@ -152,7 +203,8 @@ async def create_listing(
         description=description,
         owner_name=owner_name.strip(),
         owner_role=owner_role.strip(),
-        reference_code=reference_code.strip() if reference_code else None,
+        reference_code=ref_code_clean,
+        employee_id=employee_id,
         status=init_status,
         verified=0,
         form_data=parsed_form_data

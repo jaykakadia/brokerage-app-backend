@@ -2,6 +2,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List, Dict, Any, Optional
+from sqlalchemy.orm import Session
 from app.core.config import settings
 
 
@@ -9,7 +10,52 @@ class MailService:
     def __init__(self):
         self.sent_emails: List[Dict[str, Any]] = []
 
-    def _send_smtp(self, to_email: str, subject: str, html_content: str, text_content: Optional[str] = None) -> bool:
+    def get_active_config(self, db: Optional[Session] = None) -> Dict[str, Any]:
+        """Resolves configuration from DB system_settings with fallback to core settings."""
+        cfg = {
+            "host": settings.SMTP_HOST,
+            "port": settings.SMTP_PORT,
+            "username": settings.SMTP_USERNAME,
+            "password": settings.SMTP_PASSWORD,
+            "from_email": settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME,
+            "from_name": settings.SMTP_FROM_NAME,
+            "use_ssl": settings.SMTP_USE_SSL,
+            "use_tls": settings.SMTP_USE_TLS,
+            "mock": settings.SMTP_MOCK
+        }
+        if db:
+            try:
+                from app.db.models.setting import SystemSetting
+                settings_rows = db.query(SystemSetting).filter(SystemSetting.key.like("smtp_%")).all()
+                db_settings = {s.key: s.value for s in settings_rows}
+                if "smtp_host" in db_settings and db_settings["smtp_host"]:
+                    cfg["host"] = db_settings["smtp_host"]
+                if "smtp_email" in db_settings and db_settings["smtp_email"]:
+                    cfg["username"] = db_settings["smtp_email"]
+                    cfg["from_email"] = db_settings["smtp_email"]
+                if "smtp_password" in db_settings and db_settings["smtp_password"]:
+                    from app.core.security import decrypt_secret
+                    cfg["password"] = decrypt_secret(db_settings["smtp_password"])
+                if "smtp_port" in db_settings and db_settings["smtp_port"]:
+                    cfg["port"] = int(db_settings["smtp_port"])
+                if "smtp_encryption" in db_settings and db_settings["smtp_encryption"]:
+                    enc = db_settings["smtp_encryption"].lower()
+                    cfg["use_ssl"] = (enc == "ssl")
+                    cfg["use_tls"] = (enc == "tls")
+                if "smtp_from_name" in db_settings and db_settings["smtp_from_name"]:
+                    cfg["from_name"] = db_settings["smtp_from_name"]
+            except Exception:
+                pass
+        return cfg
+
+    def _send_smtp(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: Optional[str] = None,
+        db: Optional[Session] = None
+    ) -> bool:
         """
         Internal dispatcher. If SMTP_MOCK is True or credentials not provided,
         records the email in memory for test assertions and safe dev runs.
@@ -22,8 +68,10 @@ class MailService:
             "text": text_content or html_content,
         }
 
+        cfg = self.get_active_config(db)
+
         # Safe Mock Mode (for tests and local dev without live SMTP credentials)
-        if settings.SMTP_MOCK or not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
+        if cfg["mock"] or not cfg["username"] or not cfg["password"]:
             self.sent_emails.append(email_record)
             return True
 
@@ -31,21 +79,21 @@ class MailService:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+            msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
             msg["To"] = to_email
 
             if text_content:
                 msg.attach(MIMEText(text_content, "plain", "utf-8"))
             msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-            if settings.SMTP_USE_SSL:
-                server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
+            if cfg["use_ssl"]:
+                server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=10)
             else:
-                server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
-                if settings.SMTP_USE_TLS:
+                server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=10)
+                if cfg["use_tls"]:
                     server.starttls()
 
-            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.login(cfg["username"], cfg["password"])
             server.send_message(msg)
             server.quit()
 

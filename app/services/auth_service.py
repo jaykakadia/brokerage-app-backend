@@ -85,12 +85,19 @@ class AuthService:
                 db.rollback()
 
         # Dispatch via MailService
+        sent_ok = True
         if action == "register":
-            mail_service.send_verification_otp(email_clean, code, name=name)
+            sent_ok = mail_service.send_verification_otp(email_clean, code, name=name)
         elif action == "forgot":
-            mail_service.send_password_reset_otp(email_clean, code)
+            sent_ok = mail_service.send_password_reset_otp(email_clean, code)
         elif action == "profile_update":
-            mail_service.send_profile_verification_otp(email_clean, code)
+            sent_ok = mail_service.send_profile_verification_otp(email_clean, code)
+
+        if not sent_ok:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to send verification email. Please try again later."
+            )
 
         return code
 

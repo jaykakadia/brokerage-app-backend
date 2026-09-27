@@ -45,11 +45,10 @@ def get_csrf():
 
 @router.post("/send-otp", response_model=MessageResponse)
 def send_otp(req: SendOtpRequest, db: Session = Depends(get_db)):
-    code = auth_service.generate_and_store_otp(req.email, req.action, db=db, name=req.name)
-    dev_hint = f" (Dev Code: {code})" if settings.ENVIRONMENT == "development" else ""
+    auth_service.generate_and_store_otp(req.email, req.action, db=db, name=req.name)
     return MessageResponse(
         status="success",
-        message=f"OTP sent to your email. Valid for 10 minutes.{dev_hint}"
+        message="OTP sent to your email. Valid for 10 minutes."
     )
 
 

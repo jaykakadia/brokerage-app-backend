@@ -37,8 +37,8 @@ def reveal_contact(
       records reveal in lead_reveals audit table, and commits atomically.
     """
     listing = db.query(Listing).filter(Listing.id == req.listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found.")
+    if not listing or listing.status in ["deleted", "suspended"]:
+        raise HTTPException(status_code=404, detail="Listing is no longer available.")
 
     # Fetch listing owner user record for phone/email
     owner = db.query(User).filter(User.id == listing.user_id).first()

@@ -377,3 +377,242 @@ def legacy_save_razorpay_settings(
         admin=admin,
         db=db
     )
+
+
+# --- EMPLOYEES & TRACKER SHIMS ---
+from app.routers.employees import list_employees, get_employee, create_or_update_employee, delete_employee, get_ref_codes
+from app.schemas.employee import EmployeeCreate
+
+@router.get("/get_employees.php")
+def legacy_get_employees(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return list_employees(admin=admin, db=db)
+
+
+@router.get("/get_employee.php")
+def legacy_get_employee(id: int, admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return get_employee(employee_id=id, admin=admin, db=db)
+
+
+@router.post("/save_employee.php")
+def legacy_save_employee(
+    id: Optional[int] = Form(0),
+    name: str = Form(...),
+    reference_code: str = Form(""),
+    status: str = Form("active"),
+    phone: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return create_or_update_employee(
+        EmployeeCreate(name=name, reference_code=reference_code, status=status, phone=phone, email=email),
+        employee_id=id,
+        admin=admin,
+        db=db
+    )
+
+
+@router.post("/delete_employee.php")
+def legacy_delete_employee(id: int = Form(...), admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return delete_employee(employee_id=id, admin=admin, db=db)
+
+
+@router.get("/get_ref_codes.php")
+def legacy_get_ref_codes(q: Optional[str] = None, db: Session = Depends(get_db)):
+    return get_ref_codes(q=q, db=db)
+
+
+# --- ROLE LIMITS SHIMS ---
+from app.routers.role_limits import get_role_limits, save_role_limits
+from app.schemas.role_limit import RoleLimitsUpdate
+
+@router.get("/get_role_limits.php")
+def legacy_get_role_limits(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return get_role_limits(admin=admin, db=db)
+
+
+@router.post("/save_role_limits.php")
+async def legacy_save_role_limits(
+    request: Request,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    form_data = await request.form()
+    limits_dict = {}
+    for k, v in form_data.items():
+        if "limits[" in k:
+            role_key = k.split("limits[")[1].split("]")[0]
+            try:
+                limits_dict[role_key] = int(v)
+            except Exception:
+                pass
+        elif k in {"Owner", "Agent", "Builder"}:
+            try:
+                limits_dict[k] = int(v)
+            except Exception:
+                pass
+    return save_role_limits(RoleLimitsUpdate(limits=limits_dict), admin=admin, db=db)
+
+
+# --- BLOGS SHIMS ---
+from app.routers.blogs import list_public_blogs, list_admin_blogs, get_admin_blog, get_public_blog, create_or_update_blog, delete_blog
+from app.schemas.blog import BlogCreate
+
+@router.get("/get_blogs.php")
+def legacy_get_blogs(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    if user and user.role.lower() == "admin":
+        return list_admin_blogs(admin=user, db=db)
+    return list_public_blogs(category=category, search=search, db=db)
+
+
+@router.get("/get_blog.php")
+def legacy_get_blog(id: int, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
+    if user and user.role.lower() == "admin":
+        return get_admin_blog(blog_id=id, admin=user, db=db)
+    return get_public_blog(id_or_slug=str(id), db=db)
+
+
+@router.post("/save_blog.php")
+def legacy_save_blog(
+    id: Optional[int] = Form(0),
+    title: str = Form(...),
+    category: str = Form("market"),
+    content: str = Form(...),
+    permalink: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    status: str = Form("publish"),
+    image_url: Optional[str] = Form(None),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return create_or_update_blog(
+        BlogCreate(
+            title=title, category=category, content=content,
+            permalink=permalink, tags=tags, status=status,
+            image_url=image_url
+        ),
+        blog_id=id,
+        admin=admin,
+        db=db
+    )
+
+
+@router.post("/delete_blog.php")
+def legacy_delete_blog(id: int = Form(...), admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return delete_blog(blog_id=id, admin=admin, db=db)
+
+
+# --- MAIL SETTINGS & TEST EMAIL SHIMS ---
+from app.routers.settings import get_mail_settings, save_mail_settings, send_test_email
+from app.schemas.setting import MailSettingsUpdate, TestMailRequest
+
+@router.get("/get_mail_settings.php")
+def legacy_get_mail_settings(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return get_mail_settings(admin=admin, db=db)
+
+
+@router.post("/save_mail_settings.php")
+def legacy_save_mail_settings(
+    smtp_host: str = Form(...),
+    smtp_email: str = Form(...),
+    smtp_password: Optional[str] = Form(None),
+    smtp_port: int = Form(587),
+    smtp_encryption: str = Form("tls"),
+    from_name: Optional[str] = Form("TradeCall India"),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return save_mail_settings(
+        MailSettingsUpdate(
+            smtp_host=smtp_host, smtp_email=smtp_email,
+            smtp_password=smtp_password, smtp_port=smtp_port,
+            smtp_encryption=smtp_encryption, from_name=from_name
+        ),
+        admin=admin,
+        db=db
+    )
+
+
+@router.post("/test_mail.php")
+def legacy_test_mail(
+    test_email: str = Form(...),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return send_test_email(TestMailRequest(test_email=test_email), admin=admin, db=db)
+
+
+# --- USER ACCOUNT PROFILE & PASSWORD SHIMS ---
+from app.routers.users import update_profile, change_password
+from app.schemas.user import UserProfileUpdate, ChangePasswordRequest
+
+@router.post("/update_profile.php")
+def legacy_update_profile(
+    name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    otp: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return update_profile(
+        UserProfileUpdate(name=name, phone=phone, email=email, otp=otp),
+        current_user=current_user,
+        db=db
+    )
+
+
+@router.post("/change_password.php")
+def legacy_change_password(
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return change_password(
+        ChangePasswordRequest(
+            current_password=current_password,
+            new_password=new_password,
+            confirm_password=confirm_password
+        ),
+        current_user=current_user,
+        db=db
+    )
+
+
+# --- LISTING EDIT SHIM ---
+from app.routers.listings import update_listing as listing_edit
+from app.schemas.listing import ListingUpdate
+
+@router.post("/update_listing.php")
+def legacy_update_listing(
+    id: int = Form(...),
+    title: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    price: Optional[float] = Form(None),
+    description: Optional[str] = Form(None),
+    owner_name: Optional[str] = Form(None),
+    owner_role: Optional[str] = Form(None),
+    reference_code: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+    verified: Optional[int] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return listing_edit(
+        id=id,
+        req=ListingUpdate(
+            title=title, location=location, price=price, description=description,
+            owner_name=owner_name, owner_role=owner_role, reference_code=reference_code,
+            status=status, verified=verified
+        ),
+        current_user=current_user,
+        db=db
+    )
+

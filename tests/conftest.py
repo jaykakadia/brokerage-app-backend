@@ -39,6 +39,7 @@ def setup_test_environment():
     # Set test upload dir
     test_upload = "./test_uploads"
     settings.UPLOAD_DIR = test_upload
+    settings.SMTP_MOCK = True
     os.makedirs(os.path.join(test_upload, "listings"), exist_ok=True)
     yield
     import shutil
