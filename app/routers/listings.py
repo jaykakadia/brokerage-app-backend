@@ -126,6 +126,13 @@ async def create_listing(
             detail=f"Listing title cannot exceed 50 words. Current words: {len(words)}"
         )
 
+    # Validate owner_role against canonical roles
+    if owner_role not in {"Owner", "Agent", "Builder", "Admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid owner_role '{owner_role}'. Allowed roles: Owner, Agent, Builder, Admin"
+        )
+
     # Parse JSON form_data if provided
     parsed_form_data = None
     if form_data:
@@ -212,6 +219,11 @@ async def update_listing(
     if owner_name is not None:
         listing.owner_name = owner_name.strip()
     if owner_role is not None:
+        if owner_role not in {"Owner", "Agent", "Builder", "Admin"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid owner_role '{owner_role}'. Allowed roles: Owner, Agent, Builder, Admin"
+            )
         listing.owner_role = owner_role.strip()
     if reference_code is not None:
         listing.reference_code = reference_code.strip() if reference_code else None

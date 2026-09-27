@@ -11,6 +11,10 @@ from app.routers.users import router as users_router
 from app.routers.listings import router as listings_router
 from app.routers.locations import router as locations_router
 from app.routers.categories import router as categories_router
+from app.routers.wishlist import router as wishlist_router
+from app.routers.plans import router as plans_router
+from app.routers.leads import router as leads_router
+from app.routers.payments import router as payments_router
 from app.routers.legacy_compat import router as legacy_router
 
 
@@ -42,6 +46,10 @@ app.include_router(users_router)
 app.include_router(listings_router)
 app.include_router(locations_router)
 app.include_router(categories_router)
+app.include_router(wishlist_router)
+app.include_router(plans_router)
+app.include_router(leads_router)
+app.include_router(payments_router)
 app.include_router(legacy_router)
 
 
