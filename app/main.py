@@ -15,6 +15,10 @@ from app.routers.wishlist import router as wishlist_router
 from app.routers.plans import router as plans_router
 from app.routers.leads import router as leads_router
 from app.routers.payments import router as payments_router
+from app.routers.employees import router as employees_router
+from app.routers.role_limits import router as role_limits_router
+from app.routers.blogs import router as blogs_router
+from app.routers.settings import router as settings_router
 from app.routers.legacy_compat import router as legacy_router
 
 
@@ -50,6 +54,10 @@ app.include_router(wishlist_router)
 app.include_router(plans_router)
 app.include_router(leads_router)
 app.include_router(payments_router)
+app.include_router(employees_router)
+app.include_router(role_limits_router)
+app.include_router(blogs_router)
+app.include_router(settings_router)
 app.include_router(legacy_router)
 
 

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
         return v
 
     # Security & JWT
+    SECRET_KEY: str = "tradecall_secret_encryption_key_32_bytes_super_secure"
     JWT_SECRET_KEY: str = "tradecall_local_dev_secret_key_32_bytes_super_secure_jwt_token"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days

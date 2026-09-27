@@ -70,3 +70,33 @@ def verify_csrf_token(token: str) -> bool:
         return hmac.compare_digest(expected_sig, received_sig)
     except Exception:
         return False
+
+
+def _get_fernet():
+    import base64
+    from cryptography.fernet import Fernet
+    # Derive deterministic 32-byte urlsafe base64 key from settings.SECRET_KEY
+    key_bytes = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    fernet_key = base64.urlsafe_b64encode(key_bytes)
+    return Fernet(fernet_key)
+
+
+def encrypt_secret(plain_text: str) -> str:
+    """Encrypt sensitive string at rest using Fernet (AES-128-CBC + HMAC)."""
+    if not plain_text:
+        return ""
+    f = _get_fernet()
+    return f.encrypt(plain_text.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_secret(cipher_text: str) -> str:
+    """Decrypt sensitive string from rest storage."""
+    if not cipher_text:
+        return ""
+    try:
+        f = _get_fernet()
+        return f.decrypt(cipher_text.encode("utf-8")).decode("utf-8")
+    except Exception:
+        # Fallback to plain text if not yet encrypted (legacy data)
+        return cipher_text
+
