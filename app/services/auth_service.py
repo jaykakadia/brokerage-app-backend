@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password, create_access_token, generate_csrf_token
 from app.db.models.user import User
+from app.db.models.otp import OtpVerification
 from app.schemas.auth import RegisterRequest, LoginRequest
+from app.services.mail_service import mail_service
 
 
 class OTPRecord:
@@ -18,31 +20,41 @@ class OTPRecord:
         self.expires_at = expires_at
         self.attempts = 0
         self.max_attempts = 5
+        self.resend_count = 0
         self.is_used = False
         self.created_at = datetime.now(timezone.utc)
 
 
 class AuthService:
     def __init__(self):
-        # In-memory storage for OTPs with hashed codes
+        # Fast memory cache for OTP validation
         self._otp_store: Dict[Tuple[str, str], OTPRecord] = {}
 
     def _hash_otp(self, email: str, code: str) -> str:
         """Securely hash OTP with email salt."""
         return hashlib.sha256(f"{email.lower().strip()}:{code}".encode()).hexdigest()
 
-    def generate_and_store_otp(self, email: str, action: str) -> str:
-        """Generates random 6-digit OTP, hashes it, and stores with expiry and rate-limit."""
+    def generate_and_store_otp(self, email: str, action: str, db: Optional[Session] = None, name: Optional[str] = None) -> str:
+        """Generates random 6-digit OTP, hashes it, stores with expiry/rate-limit, and dispatches via MailService."""
         email_clean = email.lower().strip()
         key = (email_clean, action)
 
-        # Rate limiting: 60 seconds cooldown
-        existing = self._otp_store.get(key)
         now = datetime.now(timezone.utc)
+        existing = self._otp_store.get(key)
+
+        # Rate limit: 60 seconds cooldown between resends
         if existing and not existing.is_used and (now - existing.created_at).total_seconds() < 60:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Please wait at least 60 seconds before requesting a new OTP."
+            )
+
+        # Rate limit: max 5 resends per session
+        resends = existing.resend_count + 1 if existing else 0
+        if resends > 5:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many OTP requests for this email. Please try again later."
             )
 
         # Generate 6-digit OTP
@@ -50,7 +62,36 @@ class AuthService:
         hashed = self._hash_otp(email_clean, code)
         expires_at = now + timedelta(minutes=10)
 
-        self._otp_store[key] = OTPRecord(hashed, action, expires_at)
+        record = OTPRecord(hashed, action, expires_at)
+        record.resend_count = resends
+        self._otp_store[key] = record
+
+        # Persist to database if db session provided
+        if db:
+            try:
+                db_record = OtpVerification(
+                    email=email_clean,
+                    action=action,
+                    otp_hash=hashed,
+                    attempts=0,
+                    resend_count=resends,
+                    last_sent_at=now,
+                    expires_at=expires_at,
+                    is_used=False
+                )
+                db.add(db_record)
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # Dispatch via MailService
+        if action == "register":
+            mail_service.send_verification_otp(email_clean, code, name=name)
+        elif action == "forgot":
+            mail_service.send_password_reset_otp(email_clean, code)
+        elif action == "profile_update":
+            mail_service.send_profile_verification_otp(email_clean, code)
+
         return code
 
     def verify_otp(self, email: str, action: str, code: str, consume: bool = True) -> bool:
@@ -105,7 +146,7 @@ class AuthService:
             phone=req.phone.strip(),
             email=email_clean,
             password_hash=hash_password(req.password),
-            role="Owner",
+            role=req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner",
             status="active",
             listing_limit=1,
             leads_balance=0,

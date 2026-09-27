@@ -229,3 +229,151 @@ def legacy_update_user_role(
 @router.post("/delete_user.php")
 def legacy_delete_user(id: int = Form(...), admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
     return user_delete(id, admin, db)
+
+
+# --- WISHLIST SHIMS ---
+from app.routers.wishlist import get_wishlist as wishlist_get, toggle_wishlist as wishlist_toggle
+from app.schemas.wishlist import ToggleWishlistRequest
+
+@router.get("/get_wishlist.php")
+def legacy_get_wishlist(
+    ids_only: Optional[int] = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return wishlist_get(ids_only=bool(ids_only), current_user=current_user, db=db)
+
+
+@router.post("/toggle_wishlist.php")
+def legacy_toggle_wishlist(
+    listing_id: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return wishlist_toggle(ToggleWishlistRequest(listing_id=listing_id), current_user=current_user, db=db)
+
+
+# --- PLANS SHIMS ---
+from app.routers.plans import get_plans as plans_get, create_or_save_plan as plan_save, update_plan as plan_update, delete_plan as plan_delete
+from app.schemas.plan import PlanCreate, PlanUpdate
+
+@router.get("/get_plans.php")
+def legacy_get_plans(
+    all: Optional[int] = 0,
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
+    return plans_get(all=bool(all), user=user, db=db)
+
+
+@router.post("/save_plan.php")
+def legacy_save_plan(
+    id: Optional[int] = Form(0),
+    name: str = Form(...),
+    price: float = Form(...),
+    listing_limit: int = Form(5),
+    duration_days: int = Form(365),
+    status: str = Form("active"),
+    description: Optional[str] = Form(None),
+    sort_order: Optional[int] = Form(0),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    if id and id > 0:
+        return plan_update(
+            id,
+            PlanUpdate(
+                name=name, price=price, listing_limit=listing_limit,
+                leads_count=listing_limit, duration_days=duration_days,
+                status=status, description=description, sort_order=sort_order
+            ),
+            admin, db
+        )
+    return plan_save(
+        PlanCreate(
+            name=name, price=price, listing_limit=listing_limit,
+            leads_count=listing_limit, duration_days=duration_days,
+            status=status, description=description, sort_order=sort_order or 0
+        ),
+        admin, db
+    )
+
+
+@router.post("/delete_plan.php")
+def legacy_delete_plan(
+    id: int = Form(...),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return plan_delete(id, admin, db)
+
+
+# --- LEADS SHIMS ---
+from app.routers.leads import get_lead_status as leads_status, reveal_contact as leads_reveal
+from app.schemas.lead import RevealContactRequest
+
+@router.get("/get_lead_status.php")
+def legacy_get_lead_status(current_user: User = Depends(get_current_user)):
+    return leads_status(current_user=current_user)
+
+
+@router.post("/reveal_contact.php")
+def legacy_reveal_contact(
+    listing_id: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return leads_reveal(RevealContactRequest(listing_id=listing_id), current_user=current_user, db=db)
+
+
+# --- RAZORPAY SHIMS ---
+from app.routers.payments import create_order as razorpay_create_order, verify_payment as razorpay_verify_payment, get_razorpay_settings as razorpay_get_settings, save_razorpay_settings as razorpay_save_settings
+from app.schemas.order import CreateOrderRequest, VerifyPaymentRequest, RazorpaySettingsUpdate
+
+@router.post("/create_razorpay_order.php")
+def legacy_create_razorpay_order(
+    plan_id: int = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return razorpay_create_order(CreateOrderRequest(plan_id=plan_id), current_user=current_user, db=db)
+
+
+@router.post("/verify_razorpay_payment.php")
+def legacy_verify_razorpay_payment(
+    razorpay_order_id: str = Form(...),
+    razorpay_payment_id: str = Form(...),
+    razorpay_signature: str = Form(...),
+    plan_id: Optional[int] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return razorpay_verify_payment(
+        VerifyPaymentRequest(
+            razorpay_order_id=razorpay_order_id,
+            razorpay_payment_id=razorpay_payment_id,
+            razorpay_signature=razorpay_signature,
+            plan_id=plan_id
+        ),
+        current_user=current_user,
+        db=db
+    )
+
+
+@router.get("/save_razorpay_settings.php")
+def legacy_get_razorpay_settings(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return razorpay_get_settings(admin=admin, db=db)
+
+
+@router.post("/save_razorpay_settings.php")
+def legacy_save_razorpay_settings(
+    razorpay_key_id: str = Form(...),
+    razorpay_key_secret: Optional[str] = Form(None),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return razorpay_save_settings(
+        RazorpaySettingsUpdate(razorpay_key_id=razorpay_key_id, razorpay_key_secret=razorpay_key_secret),
+        admin=admin,
+        db=db
+    )

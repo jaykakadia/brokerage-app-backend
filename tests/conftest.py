@@ -18,15 +18,20 @@ from app.db.models.user import User
 from app.db.models.location import Location
 from app.db.models.category import Category
 
-# Use in-memory SQLite for tests
-TEST_DB_URL = "sqlite:///:memory:"
+# Support both SQLite (default) and PostgreSQL for testing
+TEST_DB_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
 
-engine = create_engine(
-    TEST_DB_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool
-)
+if TEST_DB_URL.startswith("sqlite"):
+    engine = create_engine(
+        TEST_DB_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+else:
+    engine = create_engine(TEST_DB_URL)
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 
 @pytest.fixture(scope="session", autouse=True)

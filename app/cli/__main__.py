@@ -8,7 +8,7 @@ def main():
         sys.argv.pop(1)
         create_admin()
     else:
-        print("Usage: python -m app.cli create-admin [--email EMAIL] [--name NAME] [--phone PHONE] [--password PASSWORD]")
+        print("Usage: python -m app.cli create-admin [--email EMAIL] [--name NAME] [--phone PHONE]")
 
 
 if __name__ == "__main__":

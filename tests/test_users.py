@@ -55,6 +55,14 @@ def test_admin_user_management(client, admin_user, test_user):
     role_res = client.post(f"/api/v1/admin/users/{test_user.id}/role", json={"role": "Builder"})
     assert role_res.status_code == 200
 
+    # Update test user role to Agent
+    role_res2 = client.post(f"/api/v1/admin/users/{test_user.id}/role", json={"role": "Agent"})
+    assert role_res2.status_code == 200
+
+    # Reject invalid role (e.g. Broker or Superuser)
+    invalid_role = client.post(f"/api/v1/admin/users/{test_user.id}/role", json={"role": "Broker"})
+    assert invalid_role.status_code == 422  # Pydantic Literal validation
+
     # Non-admin access forbidden
     client.post("/api/v1/auth/login", json={
         "email": test_user.email,

@@ -1,13 +1,15 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, EmailStr, Field
+
+CanonicalRole = Literal["Owner", "Agent", "Builder", "Admin"]
 
 
 class UserBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=150)
     phone: str = Field(..., min_length=5, max_length=30)
     email: EmailStr
-    role: str = "Owner"
+    role: CanonicalRole = "Owner"
     status: str = "active"
 
 
@@ -41,7 +43,7 @@ class AdminUserCreate(BaseModel):
     phone: str
     email: EmailStr
     password: str = Field(..., min_length=6)
-    role: str = "Owner"
+    role: CanonicalRole = "Owner"
     status: str = "active"
     plan_id: Optional[int] = None
     leads_balance: Optional[int] = 0
@@ -53,7 +55,7 @@ class AdminUserUpdate(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[CanonicalRole] = None
     status: Optional[str] = None
     plan_id: Optional[int] = None
     leads_balance: Optional[int] = None
@@ -61,4 +63,4 @@ class AdminUserUpdate(BaseModel):
 
 
 class RoleUpdateRequest(BaseModel):
-    role: str
+    role: CanonicalRole

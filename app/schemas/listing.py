@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field
+from app.schemas.user import CanonicalRole
 
 
 class ListingImageRead(BaseModel):
@@ -21,7 +22,7 @@ class ListingBase(BaseModel):
     price: float = Field(default=0.0, ge=0)
     description: Optional[str] = None
     owner_name: str = Field(..., min_length=1, max_length=150)
-    owner_role: str = "Owner"
+    owner_role: CanonicalRole = "Owner"
     reference_code: Optional[str] = None
     form_data: Optional[Any] = None
 
@@ -36,7 +37,7 @@ class ListingUpdate(BaseModel):
     price: Optional[float] = None
     description: Optional[str] = None
     owner_name: Optional[str] = None
-    owner_role: Optional[str] = None
+    owner_role: Optional[CanonicalRole] = None
     reference_code: Optional[str] = None
     status: Optional[str] = None
     verified: Optional[int] = None

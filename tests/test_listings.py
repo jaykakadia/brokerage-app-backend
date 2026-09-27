@@ -14,6 +14,17 @@ def test_listings_flow(client, test_user, admin_user):
     assert invalid_res.status_code == 400
     assert "cannot exceed 50 words" in invalid_res.json()["detail"]
 
+    # Validation test: invalid owner_role
+    invalid_role_res = client.post("/api/v1/listings", data={
+        "title": "3 BHK Luxury Builder Floor",
+        "location": "Palwal",
+        "price": 5000000,
+        "owner_name": "John Doe",
+        "owner_role": "Broker"
+    })
+    assert invalid_role_res.status_code == 400
+    assert "Invalid owner_role" in invalid_role_res.json()["detail"]
+
     # Valid listing creation
     create_res = client.post("/api/v1/listings", data={
         "title": "3 BHK Luxury Builder Floor in Sector 2",

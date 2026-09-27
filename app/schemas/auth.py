@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, EmailStr, Field
 from app.schemas.user import UserRead
 
@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
     confirm_password: Optional[str] = None
+    role: Optional[Literal["Owner", "Agent", "Builder"]] = "Owner"
     otp: Optional[str] = None
 
 
