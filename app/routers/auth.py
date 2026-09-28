@@ -16,7 +16,7 @@ from app.services.auth_service import auth_service
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
 
-def _set_auth_cookie(response: Response, token: str):
+def _set_auth_cookie(response: Response, token: str, remember_me: bool = False):
     response.set_cookie(
         key=settings.COOKIE_NAME,
         value=token,
@@ -24,7 +24,7 @@ def _set_auth_cookie(response: Response, token: str):
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAMESITE,
         domain=settings.COOKIE_DOMAIN,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=30 * 24 * 60 * 60 if remember_me else None,  # 30 days or session cookie
         path="/"
     )
 
@@ -90,7 +90,7 @@ def login(
     db: Session = Depends(get_db)
 ):
     user, token, csrf = auth_service.login_user(db, req)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, remember_me=req.remember_me)
     redirect_target = "admin-dashboard.php" if user.role.lower() == "admin" else "account.php"
     return AuthResponse(
         status="success",
