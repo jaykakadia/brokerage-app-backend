@@ -38,6 +38,25 @@ def get_listing_counts(
     return ListingCountsResponse(status="success", data=count_dict)
 
 
+@router.get("/stats")
+def get_public_stats(db: Session = Depends(get_db)):
+    """Public endpoint — returns site-wide stats for the login page hero."""
+    active = db.query(func.count(Listing.id)).filter(Listing.status == "approved").scalar() or 0
+    featured = db.query(func.count(Listing.id)).filter(
+        Listing.status == "approved", Listing.is_featured == True
+    ).scalar() or 0
+    cities = db.query(func.count(func.distinct(Listing.location))).filter(
+        Listing.status == "approved", Listing.location.isnot(None)
+    ).scalar() or 0
+    users = db.query(func.count(User.id)).scalar() or 0
+    return {
+        "active_listings": active,
+        "featured_listings": featured,
+        "cities_covered": cities,
+        "registered_users": users,
+    }
+
+
 @router.get("", response_model=dict)
 def get_listings(
     status: Optional[str] = Query("approved"),
