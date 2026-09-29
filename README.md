@@ -1,138 +1,177 @@
 # TradeCall India — Backend API
 
-Production-grade FastAPI backend re-engineering the complete **TradeCall India** real estate and property directory platform.
+# TradeCall India | Backend API
 
-## Technology Stack
+<div align="center">
 
-- **Runtime**: Python 3.12+ (tested with Python 3.14)
-- **Framework**: FastAPI
-- **Database & ORM**: PostgreSQL (Supabase cloud compatible) / SQLite for local development, SQLAlchemy 2.x
-- **Schema Migrations**: Alembic
-- **Data Validation & Serialization**: Pydantic v2
-- **Authentication**: JWT stored in secure `HttpOnly`, `SameSite=Lax` cookies (`access_token`)
-- **Cryptography & Security**:
-  - `bcrypt` for user password hashing
-  - `cryptography` (Fernet authenticated AES-128-CBC + HMAC) for database secrets encryption at rest (SMTP credentials)
-  - CSRF double-submit token protection
-  - Path traversal and file upload magic bytes validation
-- **Mail Delivery**: Python `smtplib` / `aiosmtplib` with dynamic runtime database configuration and local mock fallback
-- **Payments**: Razorpay Orders & HMAC-SHA256 signature verification with idempotent webhook processing
+### The API behind TradeCall India
 
----
+FastAPI service for listings, accounts, moderation, subscriptions, and buyer leads.
 
-## Core Modules & Capabilities
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.x-D71F00)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
-### 1. Authentication, RBAC & Users
-- **Canonical Roles**: `Owner`, `Agent`, `Builder`, `Admin`.
-- **Registration & OTP Flow**: Email-based 6-digit OTP verification with 10-minute expiry and resend cooldowns.
-- **Session Management**: Secure HttpOnly cookies with CSRF token validation on state-changing requests.
-- **Account Control**: In-place profile updates and password change with current password verification.
-- **Admin User Management**: Admin user lookup, role reassignment, and soft deactivation.
+</div>
 
-### 2. Listings & Moderation Engine
-- **Property Lifecycle**: Full moderation states (`pending`, `approved`, `sold`, `rented`, `suspended`, `deleted`).
-- **Role-Based Listing Limits**: Configurable max listings per role (`Owner`, `Agent`, `Builder`). Uncapped when set to `0`. Paid subscription plans bypass role caps.
-- **Field Associate Linkage**: Automatically attributes listings to active Field Associates via unique 6-character reference codes.
-- **Media Uploads**: Multi-photo upload validation (JPEG, PNG, WebP) with strict file size and MIME-type enforcement.
+## Contents
 
-### 3. Monetization & Buyer Engagement
-- **Membership Plans**: Multi-tier plans defining price, lead balance credits, and active duration.
-- **Razorpay Payment Integration**: Order generation, HMAC signature verification, and idempotent webhook handlers for automated lead credit.
-- **Atomic Lead Reveal Engine**: Concurrency-safe contact reveal with database row locking (`select_for_update()`), preventing double-spend and guaranteeing balance integrity.
-- **Wishlist / Shortlist**: User property bookmarking with optimistic frontend updates and automatic exclusion of deleted listings.
+- [Overview](#overview)
+- [Capabilities](#capabilities)
+- [Technology](#technology)
+- [Requirements](#requirements)
+- [Run Locally](#run-locally)
+- [Configuration](#configuration)
+- [API Surface](#api-surface)
+- [Database Migrations](#database-migrations)
+- [Tests](#tests)
+- [Docker](#docker)
+- [Production Checklist](#production-checklist)
 
-### 4. Field Associates (Tracker Module)
-- **Reference Code Generator**: Generates 6-character uppercase alphanumeric tracking codes excluding ambiguous characters.
-- **Performance Tracking**: Aggregated real-time metrics showing total listings tracked and active reference codes.
-- **Public Reference Picker**: Endpoint exposing active associates for listing attribution during property submission.
+## Overview
 
-### 5. Blog Management & Content
-- **Public Feed**: Filterable by categories (`Buy`, `Rent`, `Invest`, `Real Estate`) and search keywords.
-- **Draft Protection**: Public endpoints strictly reject draft articles with HTTP 404.
-- **Admin Management**: Full CRUD with featured image upload and custom permalink slug generation.
+TradeCall India is a real-estate and business directory. This service exposes the versioned `/api/v1` API used by the frontend, serves uploaded assets under `/uploads`, and provides a compatibility layer for legacy PHP-style API paths.
 
-### 6. SMTP Settings & Secret Encryption
-- **Dynamic Configuration**: Admin can update SMTP host, port, mail ID, encryption (SSL/TLS), and password at runtime without restarting the server.
-- **Encryption at Rest**: Passwords stored in `system_settings` are encrypted using Fernet symmetric encryption derived from `SECRET_KEY`.
-- **Zero-Exposure Policy**: Passwords are never returned in GET responses and never written to application logs.
-- **Test Email Dispatcher**: Admin endpoint allowing instant delivery tests to verify outbound SMTP credentials.
+## Capabilities
 
-### 7. Legacy API Compatibility Layer
-- **Complete Parity**: Maps all **51 original TradeCall PHP endpoints** directly to backend business logic under the `/api/*.php` prefix, ensuring full backward compatibility with legacy scripts and forms.
+- **Accounts and access:** registration and email OTP flows, cookie-based JWT sessions, CSRF protection, profile management, role-based access, and admin user management.
+- **Listings:** searchable listings, listing submission with images, moderation states, role-based posting limits, and Field Associate attribution.
+- **Plans and leads:** subscription plan management, Razorpay orders and payment verification, webhook reconciliation, lead credits, and contact reveal.
+- **Buyer tools:** authenticated wishlist operations and listing statistics.
+- **Operations:** manage locations, categories, users, Field Associates, blogs, payment settings, and SMTP settings.
+- **Email and payments:** mock modes for local development; runtime SMTP configuration and encrypted stored SMTP credentials; payment signature verification and idempotent crediting.
 
----
+## Technology
 
-## Setup & Running
+| Area                      | Tools                                                   |
+| ------------------------- | ------------------------------------------------------- |
+| Runtime and API           | Python 3.12, FastAPI, Uvicorn                           |
+| Persistence               | SQLAlchemy 2.x, SQLite or PostgreSQL, Alembic           |
+| Schemas and configuration | Pydantic v2, pydantic-settings                          |
+| Integrations              | Razorpay HTTP API, SMTP, `httpx`                        |
+| Tests                     | pytest, FastAPI TestClient, SQLite in-memory by default |
 
-### 1. Create Virtual Environment & Install Dependencies
+## Requirements
+
+- Python 3.12
+- pip
+- PostgreSQL for a shared or production database; SQLite is supported for local development
+- Docker and Docker Compose are optional
+
+## Run Locally
+
+From this directory, create and activate a virtual environment and install dependencies:
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
+Create the local environment file:
+
 ```bash
 cp .env.example .env
 ```
 
-Key environment configurations:
-```ini
-# Application
-APP_NAME="TradeCall API"
-ENVIRONMENT="development"
-DEBUG=True
-SECRET_KEY="tradecall_secret_encryption_key_32_bytes_super_secure"
+For a simple SQLite development database, set this in `.env`:
 
-# Database (SQLite default; use postgresql+psycopg:// for PostgreSQL / Supabase)
-DATABASE_URL="sqlite:///./tradecall.db"
-
-# JWT & CSRF
-JWT_SECRET_KEY="tradecall_local_dev_secret_key_32_bytes_super_secure_jwt_token"
-CSRF_SECRET_KEY="tradecall_local_dev_csrf_secret_32_bytes_key_protection"
-
-# SMTP Mail
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT=587
-SMTP_USERNAME="tradecall.in@gmail.com"
-SMTP_PASSWORD="your-app-password"
-SMTP_USE_TLS=True
-SMTP_MOCK=True  # Set to False for live outbound email delivery
-
-# Razorpay
-RAZORPAY_KEY_ID="rzp_test_placeholder"
-RAZORPAY_KEY_SECRET="rzp_test_secret_placeholder"
-RAZORPAY_MOCK=True
+```dotenv
+DATABASE_URL=sqlite:///./tradecall.db
 ```
 
-### 3. Run Database Migrations
+The checked-in `.env.example` uses a placeholder PostgreSQL URL. Replace it with your own database URL if you prefer PostgreSQL. Apply migrations, create an admin user, and start the API:
+
+```bash
+alembic upgrade head
+python -m app.cli create-admin --email admin@example.com --name "TradeCall Admin"
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The admin command prompts for the password without echoing it. It can also read `ADMIN_PASSWORD` from the environment; do not pass a password as a command-line argument.
+
+- Health check: [http://localhost:8000/health](http://localhost:8000/health)
+- OpenAPI / Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+- ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+## Configuration
+
+Settings are loaded from environment variables and `.env` by `pydantic-settings`. The most important variables are:
+
+| Variable                                            | Purpose                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------- |
+| `DATABASE_URL`                                      | SQLAlchemy database URL; defaults to local SQLite in application settings |
+| `SECRET_KEY`                                        | Key material used to encrypt stored SMTP secrets                          |
+| `JWT_SECRET_KEY`                                    | Signs authentication tokens                                               |
+| `CSRF_SECRET_KEY`                                   | Signs CSRF tokens                                                         |
+| `ALLOWED_ORIGINS`                                   | Comma-separated frontend origins allowed by CORS                          |
+| `COOKIE_SECURE`                                     | Set `true` when serving over HTTPS                                        |
+| `COOKIE_SAMESITE`, `COOKIE_DOMAIN`                  | Authentication cookie policy and optional domain                          |
+| `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_BYTES`               | Upload storage directory and per-file limit                               |
+| `SMTP_*`, `SMTP_MOCK`                               | SMTP connection details and local mock mode                               |
+| `RAZORPAY_*`, `RAZORPAY_MOCK`, `RAZORPAY_TEST_MODE` | Gateway keys, webhook secret, and test controls                           |
+
+Generate unique secret values for `SECRET_KEY`, `JWT_SECRET_KEY`, and `CSRF_SECRET_KEY` before deployment (for example, with `openssl rand -hex 32`). Keep them outside source control. Changing `SECRET_KEY` can make previously encrypted SMTP credentials unreadable. Leave SMTP and Razorpay mock modes enabled for local development; configure real credentials before disabling them.
+
+For the frontend at `http://localhost:5173`, include that exact origin in `ALLOWED_ORIGINS`. Credentialed requests require explicit allowed origins.
+
+## API Surface
+
+The interactive OpenAPI documentation at `/docs` is the source of truth for request and response schemas. Main route groups include:
+
+| Prefix                                           | Responsibility                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| `/api/v1/auth`                                   | CSRF, registration, OTP, login, logout, current user, admin setup    |
+| `/api/v1/users`                                  | User profile and admin user operations                               |
+| `/api/v1/listings`                               | Search, detail, create, moderation, statistics                       |
+| `/api/v1/locations`, `/api/v1/categories`        | Listing taxonomy                                                     |
+| `/api/v1/wishlist`                               | Saved listings                                                       |
+| `/api/v1/plans`, `/api/v1/payments`              | Plans, payment orders, verification, webhook, admin gateway settings |
+| `/api/v1/leads`                                  | Lead balance and contact reveal                                      |
+| `/api/v1/employees`, `/api/v1/admin/role-limits` | Field Associates and role posting caps                               |
+| `/api/v1/blogs`, `/api/v1/admin/settings`        | Blog publishing and SMTP administration                              |
+| `/api/*.php`                                     | Legacy compatibility handlers                                        |
+
+Uploaded assets are served from `/uploads`. Listing and API data access is protected by user or admin authorization where applicable.
+
+## Database Migrations
+
+Apply all migrations with:
+
 ```bash
 alembic upgrade head
 ```
 
-### 4. Bootstrap SuperAdmin Account
-```bash
-python -m app.cli create-admin --email admin@tradecall.in --password StrongAdminPassword123 --name "TradeCall SuperAdmin"
-```
+The migration chain is in `alembic/versions/`. Generate a new revision after changing models with `alembic revision --autogenerate -m "describe change"`, then review the generated migration before applying it. Use `alembic downgrade -1` to revert one revision where the migration supports downgrade.
 
-### 5. Start Development Server
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-Interactive API documentation:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+## Tests
 
-### 6. Run Automated Test Suite
+Run the backend test suite from this directory:
+
 ```bash
 pytest -v
 ```
-Runs all 30 tests covering authentication, concurrency, idempotent webhooks, role limits, employees, blogs, encrypted SMTP settings, and E2E flows.
 
----
+Tests cover authentication, listings and uploads, plans and payments, lead reveals and transaction behavior, wishlists, users, locations and categories, Field Associates, blogs, and mail settings. The suite uses an in-memory SQLite database by default. Set `TEST_DATABASE_URL` to override it.
 
-## Docker Deployment
+## Docker
+
+The Compose service reads configuration from `.env`, exposes port `8000`, and persists uploads in the local `uploads/` directory.
+
 ```bash
+cp .env.example .env
+# Set DATABASE_URL and required secrets in .env.
 docker compose up -d --build
+docker compose exec backend alembic upgrade head
 ```
+
+## Production Checklist
+
+- Use HTTPS, unique high-entropy secrets, `COOKIE_SECURE=true`, and an explicit `ALLOWED_ORIGINS` list.
+- Set `DEBUG=false`; never use development secret defaults in a deployed environment.
+- Configure a managed PostgreSQL database, apply migrations as a deployment step, and back up the database.
+- Set `SMTP_MOCK=false` and `RAZORPAY_MOCK=false` only after valid production credentials are configured. Set `RAZORPAY_TEST_MODE=false` for live payment verification.
+- Persist uploaded media outside ephemeral container storage and include it in backup/retention plans.
+- Keep `.env`, payment secrets, and mail credentials out of Git and logs.
