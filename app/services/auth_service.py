@@ -4,12 +4,13 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple, Optional
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password, create_access_token, generate_csrf_token
 from app.db.models.user import User
 from app.db.models.otp import OtpVerification
-from app.schemas.auth import RegisterRequest, LoginRequest
+from app.schemas.auth import BootstrapAdminRequest, RegisterRequest, LoginRequest
 from app.services.mail_service import mail_service
 
 
@@ -195,6 +196,58 @@ class AuthService:
             email=email_clean,
             password_hash=hash_password(req.password),
             role=req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner",
+            status="active",
+            listing_limit=1,
+            leads_balance=0,
+            leads_used=0
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        token = create_access_token(subject=new_user.id, role=new_user.role)
+        csrf = generate_csrf_token()
+        return new_user, token, csrf
+
+    def admin_exists(self, db: Session) -> bool:
+        count = db.query(func.count(User.id)).filter(func.lower(User.role) == "admin").scalar() or 0
+        return count > 0
+
+    def bootstrap_admin(self, db: Session, req: BootstrapAdminRequest) -> Tuple[User, str, str]:
+        if self.admin_exists(db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="An admin account already exists. Sign in instead."
+            )
+
+        if req.confirm_password and req.confirm_password != req.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Passwords do not match."
+            )
+
+        email_clean = req.email.lower().strip()
+        existing_email = db.query(User).filter(User.email == email_clean).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email is already registered. Sign in, then an admin can change the role."
+            )
+
+        phone_clean = req.phone.strip()
+        existing_phone = db.query(User).filter(User.phone == phone_clean).first()
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This mobile number is already registered."
+            )
+
+        new_user = User(
+            name=req.name.strip(),
+            phone=phone_clean,
+            email=email_clean,
+            password_hash=hash_password(req.password),
+            role="Admin",
             status="active",
             listing_limit=1,
             leads_balance=0,

@@ -37,6 +37,14 @@ class ResetPasswordRequest(BaseModel):
     otp: Optional[str] = None
 
 
+class BootstrapAdminRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+    phone: str = Field(..., min_length=5, max_length=30)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    confirm_password: Optional[str] = None
+
+
 class AuthResponse(BaseModel):
     status: str = "success"
     message: str = "Success"

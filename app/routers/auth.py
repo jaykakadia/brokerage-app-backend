@@ -7,7 +7,7 @@ from app.core.security import generate_csrf_token
 from app.db.models.user import User
 from app.schemas.auth import (
     LoginRequest, RegisterRequest, SendOtpRequest, VerifyOtpRequest,
-    ResetPasswordRequest, AuthResponse
+    ResetPasswordRequest, AuthResponse, BootstrapAdminRequest
 )
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.user import UserRead
@@ -78,6 +78,28 @@ def register(
         status="success",
         message="Account created successfully!",
         redirect="account.php",
+        csrf_token=csrf,
+        user=UserRead.model_validate(user)
+    )
+
+
+@router.get("/admin-setup")
+def admin_setup_status(db: Session = Depends(get_db)):
+    return {"needs_admin": not auth_service.admin_exists(db)}
+
+
+@router.post("/bootstrap-admin", response_model=AuthResponse)
+def bootstrap_admin(
+    req: BootstrapAdminRequest,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    user, token, csrf = auth_service.bootstrap_admin(db, req)
+    _set_auth_cookie(response, token)
+    return AuthResponse(
+        status="success",
+        message="Admin account created.",
+        redirect="admin-dashboard.php",
         csrf_token=csrf,
         user=UserRead.model_validate(user)
     )
