@@ -7,7 +7,7 @@ class PlanBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
     price: float = Field(..., ge=0)
-    listing_limit: int = Field(default=5, ge=1)
+    listing_limit: int = Field(default=5, ge=0)
     leads_count: int = Field(default=5, ge=0)
     duration_days: int = Field(default=365, ge=1)
     status: str = Field(default="active")

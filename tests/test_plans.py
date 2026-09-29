@@ -39,13 +39,25 @@ def test_plans_flow_and_rbac(client, test_user, admin_user):
     })
     assert inact_res.status_code == 200
 
-    # 3. Public visitor views plans: only active plan returned
+    unlimited_res = client.post("/api/v1/plans", json={
+        "name": "Unlimited Plan",
+        "price": 0.0,
+        "listing_limit": 0,
+        "leads_count": 0,
+        "duration_days": 365,
+        "status": "active"
+    })
+    assert unlimited_res.status_code == 200
+    assert unlimited_res.json()["data"]["listing_limit"] == 0
+
+    # 3. Public visitor views plans: only active plans returned
     client.cookies.clear()
     pub_res = client.get("/api/v1/plans")
     assert pub_res.status_code == 200
-    plan_names = [p["name"] for p in pub_res.json()["data"]]
-    assert "Gold Partner" in plan_names
-    assert "Draft Plan" not in plan_names
+    plans_by_name = {p["name"]: p for p in pub_res.json()["data"]}
+    assert "Gold Partner" in plans_by_name
+    assert "Draft Plan" not in plans_by_name
+    assert plans_by_name["Unlimited Plan"]["listing_limit"] == 0
 
     # 4. Admin updates plan
     client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
