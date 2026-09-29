@@ -1,3 +1,4 @@
+import random
 import re
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -126,7 +127,6 @@ def create_or_update_blog(
         # Check permalink uniqueness
         existing = db.query(Blog).filter(Blog.permalink == permalink).first()
         if existing:
-            import random
             permalink = f"{permalink}-{random.randint(100, 999)}"
 
         blog = Blog(

@@ -1,14 +1,51 @@
-from typing import List
+import json
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_admin, get_db
 from app.db.models.category import Category
+from app.db.models.listing import Listing
 from app.db.models.user import User
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.category import CategoryRead, CategoryCreate, CategoryUpdate
 
 router = APIRouter(prefix="/api/v1/categories", tags=["Categories"])
+
+
+def _listing_category_name(form_data: Any) -> str:
+    data = form_data
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("category") or "").strip().lower()
+
+
+def _listing_counts_by_category(db: Session) -> Dict[str, int]:
+    rows = db.query(Listing.form_data, Listing.status).all()
+    counts: Dict[str, int] = {}
+    for form_data, status_value in rows:
+        if (status_value or "").lower() == "deleted":
+            continue
+        name = _listing_category_name(form_data)
+        if not name:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def _to_category_read(category: Category, counts: Dict[str, int]) -> CategoryRead:
+    return CategoryRead(
+        id=category.id,
+        name=category.name,
+        description=category.description,
+        total_listings=counts.get(category.name.strip().lower(), 0),
+        created_at=category.created_at
+    )
 
 
 @router.get("", response_model=APIResponse[List[CategoryRead]])
@@ -28,7 +65,8 @@ def get_categories(db: Session = Depends(get_db)):
         db.commit()
         for c in cats:
             db.refresh(c)
-    return APIResponse(status="success", data=[CategoryRead.model_validate(c) for c in cats])
+    counts = _listing_counts_by_category(db)
+    return APIResponse(status="success", data=[_to_category_read(c, counts) for c in cats])
 
 
 @router.get("/{category_id}", response_model=APIResponse[CategoryRead])
@@ -36,7 +74,8 @@ def get_category(category_id: int, db: Session = Depends(get_db)):
     cat = db.query(Category).filter(Category.id == category_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found.")
-    return APIResponse(status="success", data=CategoryRead.model_validate(cat))
+    counts = _listing_counts_by_category(db)
+    return APIResponse(status="success", data=_to_category_read(cat, counts))
 
 
 @router.post("", response_model=APIResponse[CategoryRead])
@@ -50,13 +89,15 @@ def create_or_save_category(
         existing.description = req.description
         db.commit()
         db.refresh(existing)
-        return APIResponse(status="success", data=CategoryRead.model_validate(existing))
+        counts = _listing_counts_by_category(db)
+        return APIResponse(status="success", data=_to_category_read(existing, counts))
 
     cat = Category(name=req.name.strip(), description=req.description)
     db.add(cat)
     db.commit()
     db.refresh(cat)
-    return APIResponse(status="success", data=CategoryRead.model_validate(cat))
+    counts = _listing_counts_by_category(db)
+    return APIResponse(status="success", data=_to_category_read(cat, counts))
 
 
 @router.put("/{category_id}", response_model=APIResponse[CategoryRead])
@@ -75,7 +116,8 @@ def update_category(
         cat.description = req.description
     db.commit()
     db.refresh(cat)
-    return APIResponse(status="success", data=CategoryRead.model_validate(cat))
+    counts = _listing_counts_by_category(db)
+    return APIResponse(status="success", data=_to_category_read(cat, counts))
 
 
 @router.delete("/{category_id}", response_model=MessageResponse)
