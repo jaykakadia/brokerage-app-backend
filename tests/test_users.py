@@ -1,3 +1,14 @@
+def _profile_otp(client, email: str) -> str:
+    from app.services.mail_service import mail_service
+
+    send_res = client.post("/api/v1/auth/send-otp", json={
+        "email": email,
+        "action": "profile_update"
+    })
+    assert send_res.status_code == 200
+    return mail_service.sent_emails[-1]["subject"].split(":")[-1].strip()
+
+
 def test_user_profile_and_password(client, test_user):
     # Log in as test user
     client.post("/api/v1/auth/login", json={
@@ -10,13 +21,28 @@ def test_user_profile_and_password(client, test_user):
     assert res.status_code == 200
     assert res.json()["data"]["name"] == "John Doe"
 
-    # Update profile
-    upd = client.put("/api/v1/users/profile", json={
+    missing_otp = client.put("/api/v1/users/profile", json={
         "name": "John Updated",
         "phone": "9998881112"
     })
+    assert missing_otp.status_code == 400
+
+    otp_code = _profile_otp(client, test_user.email)
+    upd = client.put("/api/v1/users/profile", json={
+        "name": "John Updated",
+        "phone": "9998881112",
+        "otp": otp_code
+    })
     assert upd.status_code == 200
     assert "Profile updated" in upd.json()["message"]
+
+    new_email = "john.updated@example.com"
+    email_otp = _profile_otp(client, new_email)
+    email_upd = client.put("/api/v1/users/profile", json={
+        "email": new_email,
+        "otp": email_otp
+    })
+    assert email_upd.status_code == 200
 
     # Verify updated profile
     res2 = client.get("/api/v1/users/profile")
@@ -32,7 +58,7 @@ def test_user_profile_and_password(client, test_user):
 
     # Log in with new password
     login_new = client.post("/api/v1/auth/login", json={
-        "email": test_user.email,
+        "email": "john.updated@example.com",
         "password": "newsecurepass999"
     })
     assert login_new.status_code == 200

@@ -28,17 +28,19 @@ def update_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if req.email and req.email.lower().strip() != current_user.email:
-        # If email changed, check if OTP was verified
-        if req.otp:
-            is_valid = auth_service.verify_otp(req.email, "profile_update", req.otp, consume=True)
-            if not is_valid:
-                raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
-        # Check uniqueness
-        exists = db.query(User).filter(User.email == req.email.lower().strip(), User.id != current_user.id).first()
+    otp = (req.otp or "").strip()
+    if not otp:
+        raise HTTPException(status_code=400, detail="OTP is required to save profile details.")
+
+    email_clean = req.email.lower().strip() if req.email else current_user.email
+    if not auth_service.verify_otp(email_clean, "profile_update", otp, consume=True):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+
+    if email_clean != current_user.email:
+        exists = db.query(User).filter(User.email == email_clean, User.id != current_user.id).first()
         if exists:
             raise HTTPException(status_code=400, detail="Email is already in use by another account.")
-        current_user.email = req.email.lower().strip()
+        current_user.email = email_clean
 
     if req.name:
         current_user.name = req.name.strip()
