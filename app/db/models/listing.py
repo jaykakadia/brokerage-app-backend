@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Any
-from sqlalchemy import String, Integer, Numeric, Text, ForeignKey, JSON, SmallInteger, DateTime
+from sqlalchemy import String, Integer, Numeric, Text, ForeignKey, JSON, SmallInteger, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin
 
@@ -23,6 +23,7 @@ class Listing(Base, TimestampMixin):
 
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
     verified: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     form_data: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
     # Relationships

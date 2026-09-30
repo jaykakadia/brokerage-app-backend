@@ -41,6 +41,7 @@ class ListingUpdate(BaseModel):
     reference_code: Optional[str] = None
     status: Optional[str] = None
     verified: Optional[int] = None
+    is_featured: Optional[bool] = None
     form_data: Optional[Any] = None
 
 
@@ -49,6 +50,7 @@ class ListingRead(ListingBase):
     user_id: int
     status: str
     verified: int
+    is_featured: bool = False
     created_at: datetime
     images: List[ListingImageRead] = []
 
