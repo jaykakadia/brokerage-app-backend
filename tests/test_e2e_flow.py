@@ -1,3 +1,4 @@
+from app.services.auth_service import auth_service
 import io
 import pytest
 from app.db.models.user import User
@@ -31,6 +32,7 @@ def test_complete_phase1_flow(client, admin_user):
         "email": "alice@example.com",
         "password": "alicePassword123"
     }
+    reg_data["otp"] = auth_service.generate_and_store_otp(reg_data["email"], "register")
     reg_resp = client.post("/api/v1/auth/register", json=reg_data)
     assert reg_resp.status_code == 200, f"Register failed: {reg_resp.text}"
     assert "access_token" in client.cookies
@@ -144,7 +146,8 @@ def test_complete_phase1_flow(client, admin_user):
         "name": "Bob Intruder",
         "phone": "9700112233",
         "email": "bob@example.com",
-        "password": "bobPassword123"
+        "password": "bobPassword123",
+        "otp": auth_service.generate_and_store_otp("bob@example.com", "register")
     })
     assert reg_b.status_code == 200
 

@@ -18,7 +18,7 @@ from app.routers.payments import router as payments_router
 from app.routers.employees import router as employees_router
 from app.routers.role_limits import router as role_limits_router
 from app.routers.blogs import router as blogs_router
-from app.routers.settings import router as settings_router
+from app.routers.settings import router as settings_router, public_router as public_settings_router
 from app.routers.legacy_compat import router as legacy_router
 
 
@@ -58,6 +58,7 @@ app.include_router(employees_router)
 app.include_router(role_limits_router)
 app.include_router(blogs_router)
 app.include_router(settings_router)
+app.include_router(public_settings_router)
 app.include_router(legacy_router)
 
 

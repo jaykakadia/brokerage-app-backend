@@ -1,3 +1,4 @@
+from app.services.auth_service import auth_service
 import hmac
 import hashlib
 import pytest
@@ -25,7 +26,8 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
         "email": "seller.suresh@tradecall.in",
         "phone": "9876543210",
         "password": "Password@123",
-        "role": "Owner"
+        "role": "Owner",
+        "otp": auth_service.generate_and_store_otp("seller.suresh@tradecall.in", "register")
     })
     assert seller_res.status_code == 200
 

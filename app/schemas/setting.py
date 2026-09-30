@@ -24,3 +24,10 @@ class MailSettingsUpdate(BaseModel):
 
 class TestMailRequest(BaseModel):
     test_email: str
+
+
+
+class SignupGuideSettings(BaseModel):
+    """Help links shown on the Create Account screen."""
+    blog_url: str = ""
+    video_url: str = ""

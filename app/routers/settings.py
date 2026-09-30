@@ -5,10 +5,59 @@ from app.core.dependencies import get_current_admin, get_db
 from app.db.models.user import User
 from app.db.models.setting import SystemSetting
 from app.schemas.common import APIResponse, MessageResponse
-from app.schemas.setting import MailSettingsRead, MailSettingsUpdate, TestMailRequest
+from app.schemas.setting import MailSettingsRead, MailSettingsUpdate, TestMailRequest, SignupGuideSettings
 from app.services.mail_service import mail_service
 
 router = APIRouter(prefix="/api/v1/admin/settings", tags=["Admin Settings"])
+public_router = APIRouter(prefix="/api/v1/settings", tags=["Public Settings"])
+
+SIGNUP_GUIDE_KEYS = {"blog_url": "signup_guide_blog_url", "video_url": "signup_guide_video_url"}
+
+
+def _read_signup_guide(db: Session) -> SignupGuideSettings:
+    rows = db.query(SystemSetting).filter(SystemSetting.key.in_(SIGNUP_GUIDE_KEYS.values())).all()
+    values = {row.key: row.value for row in rows}
+    return SignupGuideSettings(
+        blog_url=values.get(SIGNUP_GUIDE_KEYS["blog_url"], ""),
+        video_url=values.get(SIGNUP_GUIDE_KEYS["video_url"], ""),
+    )
+
+
+@public_router.get("/signup-guide", response_model=APIResponse[SignupGuideSettings])
+def get_public_signup_guide(db: Session = Depends(get_db)):
+    """Public endpoint: help links shown on the Create Account screen."""
+    return APIResponse(status="success", data=_read_signup_guide(db))
+
+
+@router.get("/signup-guide", response_model=APIResponse[SignupGuideSettings])
+def get_signup_guide(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    return APIResponse(status="success", data=_read_signup_guide(db))
+
+
+@router.post("/signup-guide", response_model=APIResponse[SignupGuideSettings])
+def save_signup_guide(
+    req: SignupGuideSettings,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin endpoint to set the blog and video links shown on the Create Account screen."""
+    cleaned = {field: (getattr(req, field) or "").strip() for field in SIGNUP_GUIDE_KEYS}
+    for val in cleaned.values():
+        if val and not val.lower().startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Links must start with http:// or https://")
+
+    for field, key in SIGNUP_GUIDE_KEYS.items():
+        val = cleaned[field]
+        row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(SystemSetting(key=key, value=val, is_encrypted=False))
+    db.commit()
+    return APIResponse(status="success", message="Sign-up guide links saved.", data=_read_signup_guide(db))
 
 
 @router.get("/mail", response_model=APIResponse[MailSettingsRead])

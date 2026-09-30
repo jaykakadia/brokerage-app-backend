@@ -1,3 +1,4 @@
+from app.services.auth_service import auth_service
 import pytest
 from app.core.security import create_access_token
 from datetime import timedelta
@@ -11,6 +12,7 @@ def test_register_and_login_flow(client):
         "email": "jane@example.com",
         "password": "securepassword123"
     }
+    reg_payload["otp"] = auth_service.generate_and_store_otp(reg_payload["email"], "register")
     res = client.post("/api/v1/auth/register", json=reg_payload)
     assert res.status_code == 200
     data = res.json()
@@ -82,3 +84,17 @@ def test_otp_flow(client):
     })
     assert verify_res.status_code == 200
     assert verify_res.json()["status"] == "success"
+
+
+def test_register_requires_otp(client):
+    payload = {
+        "name": "No Otp",
+        "phone": "9000000001",
+        "email": "nootp@example.com",
+        "password": "securepassword123"
+    }
+    res = client.post("/api/v1/auth/register", json=payload)
+    assert res.status_code == 400
+
+    res = client.post("/api/v1/auth/register", json={**payload, "otp": "000000"})
+    assert res.status_code == 400

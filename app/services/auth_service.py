@@ -181,14 +181,18 @@ class AuthService:
                 detail="This mobile number is already registered. Please sign in."
             )
 
-        # Validate OTP if provided
-        if req.otp:
-            is_valid = self.verify_otp(email_clean, "register", req.otp, consume=True)
-            if not is_valid:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired OTP."
-                )
+        # Email OTP verification is mandatory for self-registration
+        otp_clean = (req.otp or "").strip()
+        if not otp_clean:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please verify your email with the OTP before creating an account."
+            )
+        if not self.verify_otp(email_clean, "register", otp_clean, consume=True):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired OTP."
+            )
 
         new_user = User(
             name=req.name.strip(),
