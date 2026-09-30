@@ -83,7 +83,7 @@ def get_employee(
     """Admin endpoint to get single employee details."""
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
-        raise HTTPException(status_code=404, detail="Field Associate not found.")
+        raise HTTPException(status_code=404, detail="Business Associate not found.")
 
     count = (
         db.query(func.count(Listing.id))
@@ -120,7 +120,7 @@ def create_or_update_employee(
     if employee_id and employee_id > 0:
         emp = db.query(Employee).filter(Employee.id == employee_id).first()
         if not emp:
-            raise HTTPException(status_code=404, detail="Field Associate not found.")
+            raise HTTPException(status_code=404, detail="Business Associate not found.")
         
         # Check duplicate code
         exists = db.query(Employee).filter(Employee.reference_code == ref_code, Employee.id != employee_id).first()
@@ -179,8 +179,8 @@ def delete_employee(
     """Admin delete field associate."""
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
-        raise HTTPException(status_code=404, detail="Field Associate not found.")
+        raise HTTPException(status_code=404, detail="Business Associate not found.")
 
     db.delete(emp)
     db.commit()
-    return MessageResponse(status="success", message="Field Associate deleted successfully.")
+    return MessageResponse(status="success", message="Business Associate deleted successfully.")
