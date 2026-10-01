@@ -88,3 +88,46 @@ def test_otp_security_and_limits(client, db_session):
     assert db_record.otp_hash != real_code
     assert len(db_record.otp_hash) == 64  # SHA-256 hex string
 
+
+
+def test_brevo_api_used_when_key_set(monkeypatch):
+    from app.core.config import settings
+    import app.services.mail_service as ms
+
+    calls = []
+
+    class FakeResp:
+        status_code = 201
+        text = "{}"
+
+    def fake_post(url, json, headers, timeout):
+        calls.append((url, json, headers))
+        return FakeResp()
+
+    monkeypatch.setattr(settings, "SMTP_MOCK", False)
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(ms.httpx, "post", fake_post)
+
+    assert mail_service.send_verification_otp("brevo@example.com", "112233") is True
+    url, payload, headers = calls[0]
+    assert url == ms.BREVO_SEND_URL
+    assert headers["api-key"] == "test-key"
+    assert payload["sender"]["email"] == "sender@example.com"
+    assert payload["to"] == [{"email": "brevo@example.com"}]
+    assert "112233" in payload["subject"]
+
+
+def test_brevo_rejection_reports_failure(monkeypatch):
+    from app.core.config import settings
+    import app.services.mail_service as ms
+
+    class FakeResp:
+        status_code = 401
+        text = "unauthorized"
+
+    monkeypatch.setattr(settings, "SMTP_MOCK", False)
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "bad-key")
+    monkeypatch.setattr(ms.httpx, "post", lambda *a, **k: FakeResp())
+
+    assert mail_service.send_verification_otp("brevo@example.com", "112233") is False

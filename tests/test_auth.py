@@ -100,3 +100,13 @@ def test_register_requires_otp(client):
 
     res = client.post("/api/v1/auth/register", json={**payload, "otp": "000000"})
     assert res.status_code == 400
+
+
+def test_reset_password_requires_otp(client, test_user):
+    # Without an OTP nobody can take over an account by email alone
+    res = client.post("/api/v1/auth/reset-password", json={"email": test_user.email, "new_password": "Hijacked123!"})
+    assert res.status_code == 400
+    assert "OTP is required" in res.json()["detail"]
+
+    res = client.post("/api/v1/auth/reset-password", json={"email": test_user.email, "new_password": "Hijacked123!", "otp": "000000"})
+    assert res.status_code == 400

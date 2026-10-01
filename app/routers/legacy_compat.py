@@ -70,9 +70,10 @@ def legacy_verify_otp(
 def legacy_reset_password(
     email: str = Form(...),
     new_password: str = Form(...),
+    otp: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    return auth_reset_pwd(ResetPasswordRequest(email=email, new_password=new_password), db)
+    return auth_reset_pwd(ResetPasswordRequest(email=email, new_password=new_password, otp=otp), db)
 
 
 # --- LISTING SHIMS ---

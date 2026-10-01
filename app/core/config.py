@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     SMTP_MOCK: bool = True
 
+    # Brevo transactional email API (HTTPS). When set, used instead of SMTP —
+    # needed on hosts that block outbound SMTP ports (e.g. Render free tier).
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

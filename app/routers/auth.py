@@ -143,10 +143,11 @@ def reset_password(
     db: Session = Depends(get_db)
 ):
     email_clean = req.email.lower().strip()
-    if req.otp:
-        is_valid = auth_service.verify_otp(email_clean, "forgot", req.otp, consume=True)
-        if not is_valid:
-            raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+    otp = (req.otp or "").strip()
+    if not otp:
+        raise HTTPException(status_code=400, detail="OTP is required to reset your password.")
+    if not auth_service.verify_otp(email_clean, "forgot", otp, consume=True):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
     user = db.query(User).filter(User.email == email_clean).first()
     if not user:

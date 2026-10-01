@@ -1,9 +1,15 @@
+import logging
 import smtplib
+import httpx
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 class MailService:
@@ -70,10 +76,14 @@ class MailService:
 
         cfg = self.get_active_config(db)
 
-        # Safe Mock Mode (for tests and local dev without live SMTP credentials)
-        if cfg["mock"] or not cfg["username"] or not cfg["password"]:
+        # Safe Mock Mode (for tests and local dev without live mail credentials)
+        has_smtp_creds = bool(cfg["username"] and cfg["password"])
+        if cfg["mock"] or not (settings.BREVO_API_KEY or has_smtp_creds):
             self.sent_emails.append(email_record)
             return True
+
+        if settings.BREVO_API_KEY:
+            return self._send_brevo(cfg, email_record)
 
         # Real SMTP Delivery
         try:
@@ -99,9 +109,38 @@ class MailService:
 
             self.sent_emails.append(email_record)
             return True
-        except Exception:
+        except Exception as exc:
             # Safe failure: never leak credentials or internal traceback to client
+            logger.error("SMTP send to %s via %s:%s failed: %r", to_email, cfg["host"], cfg["port"], exc)
             return False
+
+    def _send_brevo(self, cfg: Dict[str, Any], email_record: Dict[str, Any]) -> bool:
+        """Sends through Brevo's HTTPS API (port 443), which works where SMTP ports are blocked."""
+        payload = {
+            "sender": {
+                "name": cfg["from_name"],
+                "email": settings.BREVO_SENDER_EMAIL or cfg["from_email"],
+            },
+            "to": [{"email": email_record["to"]}],
+            "subject": email_record["subject"],
+            "htmlContent": email_record["html"],
+            "textContent": email_record["text"],
+        }
+        try:
+            resp = httpx.post(
+                BREVO_SEND_URL,
+                json=payload,
+                headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                timeout=15,
+            )
+        except httpx.HTTPError as exc:
+            logger.error("Brevo send to %s failed: %r", email_record["to"], exc)
+            return False
+        if resp.status_code >= 300:
+            logger.error("Brevo send to %s rejected (%s): %s", email_record["to"], resp.status_code, resp.text[:300])
+            return False
+        self.sent_emails.append(email_record)
+        return True
 
     def send_verification_otp(self, to_email: str, otp: str, name: Optional[str] = None) -> bool:
         """Sends registration OTP verification email."""
