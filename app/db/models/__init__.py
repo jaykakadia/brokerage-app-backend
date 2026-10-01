@@ -12,6 +12,7 @@ from app.db.models.otp import OtpVerification
 from app.db.models.employee import Employee
 from app.db.models.role_limit import RoleLimit
 from app.db.models.blog import Blog
+from app.db.models.enquiry import Enquiry
 
 __all__ = [
     "Base",
@@ -29,5 +30,6 @@ __all__ = [
     "Employee",
     "RoleLimit",
     "Blog",
+    "Enquiry",
 ]
 
