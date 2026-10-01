@@ -10,7 +10,8 @@ def test_register_and_login_flow(client):
         "name": "Jane Doe",
         "phone": "9998887776",
         "email": "jane@example.com",
-        "password": "securepassword123"
+        "password": "securepassword123",
+        "business_name": "Doe Estates"
     }
     reg_payload["otp"] = auth_service.generate_and_store_otp(reg_payload["email"], "register")
     res = client.post("/api/v1/auth/register", json=reg_payload)
@@ -23,6 +24,7 @@ def test_register_and_login_flow(client):
     me_res = client.get("/api/v1/auth/me")
     assert me_res.status_code == 200
     assert me_res.json()["data"]["email"] == "jane@example.com"
+    assert me_res.json()["data"]["business_name"] == "Doe Estates"
 
     # 3. Logout
     logout_res = client.post("/api/v1/auth/logout")

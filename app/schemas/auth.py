@@ -17,6 +17,7 @@ class RegisterRequest(BaseModel):
     confirm_password: Optional[str] = None
     role: Optional[Literal["Owner", "Agent", "Builder"]] = "Owner"
     otp: Optional[str] = None
+    business_name: Optional[str] = Field(None, max_length=150)
 
 
 class SendOtpRequest(BaseModel):

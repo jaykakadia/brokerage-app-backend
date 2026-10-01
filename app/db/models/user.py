@@ -23,5 +23,12 @@ class User(Base, TimestampMixin):
     leads_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     plan_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Public business profile (optional, editable without OTP)
+    business_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    whatsapp: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    facebook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    website_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    x_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Relationships
     listings: Mapped[List["Listing"]] = relationship("Listing", back_populates="user", cascade="all, delete-orphan")

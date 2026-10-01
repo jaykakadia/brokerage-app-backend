@@ -28,24 +28,36 @@ def update_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    otp = (req.otp or "").strip()
-    if not otp:
-        raise HTTPException(status_code=400, detail="OTP is required to save profile details.")
-
+    name_clean = req.name.strip() if req.name else current_user.name
+    phone_clean = req.phone.strip() if req.phone else current_user.phone
     email_clean = req.email.lower().strip() if req.email else current_user.email
-    if not auth_service.verify_otp(email_clean, "profile_update", otp, consume=True):
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
-    if email_clean != current_user.email:
-        exists = db.query(User).filter(User.email == email_clean, User.id != current_user.id).first()
-        if exists:
-            raise HTTPException(status_code=400, detail="Email is already in use by another account.")
-        current_user.email = email_clean
+    # Name, phone and email identify the account, so changing them needs an OTP.
+    # Business/social details can be saved without one.
+    identity_changed = (
+        name_clean != current_user.name
+        or phone_clean != current_user.phone
+        or email_clean != current_user.email
+    )
+    if identity_changed:
+        otp = (req.otp or "").strip()
+        if not otp:
+            raise HTTPException(status_code=400, detail="OTP is required to change name, mobile or email.")
+        if not auth_service.verify_otp(email_clean, "profile_update", otp, consume=True):
+            raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
-    if req.name:
-        current_user.name = req.name.strip()
-    if req.phone:
-        current_user.phone = req.phone.strip()
+        if email_clean != current_user.email:
+            exists = db.query(User).filter(User.email == email_clean, User.id != current_user.id).first()
+            if exists:
+                raise HTTPException(status_code=400, detail="Email is already in use by another account.")
+            current_user.email = email_clean
+        current_user.name = name_clean
+        current_user.phone = phone_clean
+
+    for field in ("business_name", "whatsapp", "facebook_url", "website_url", "x_url"):
+        if field in req.model_fields_set:
+            value = (getattr(req, field) or "").strip()
+            setattr(current_user, field, value or None)
 
     db.commit()
     db.refresh(current_user)

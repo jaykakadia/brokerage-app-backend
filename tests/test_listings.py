@@ -70,3 +70,86 @@ def test_listings_flow(client, test_user, admin_user):
     # 5. Delete listing
     del_res = client.delete(f"/api/v1/listings/{listing_id}")
     assert del_res.status_code == 200
+
+
+def test_listing_form_data_round_trip(client, admin_user):
+    """Everything the post-listing wizard puts in form_data must come back unchanged."""
+    import json
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+
+    property_form = {
+        "kind": "owner",
+        "propType": "flat",
+        "forWhat": "sale",
+        "posterRole": "real_owner",
+        "businessName": "Kakadia Builders",
+        "mobile": "9876543210",
+        "whatsapp": "9123456780",
+        "sameAsMobile": False,
+        "facebookUrl": "https://facebook.com/kakadia",
+        "websiteUrl": "https://kakadia.in/",
+        "xUrl": "https://x.com/kakadia",
+        "bhk": "3BHK",
+        "bath": "2",
+        "furnish": "Semi-Furnished",
+        "area": "1200",
+        "unit": "Sq.Ft",
+        "rate": "4,500",
+        "amenities": ["Lift", "Power Backup", "Gym"],
+        "frontRoad": "Yes",
+        "roadWidth": "30",
+        "facing": "East",
+        "city": "Sonipat",
+        "state": "Haryana",
+        "price": 5400000
+    }
+    res = client.post("/api/v1/listings", data={
+        "title": "3BHK Flat/Builder Floor/House/Villa for Sale in Sonipat",
+        "location": "Sonipat, Haryana",
+        "price": 5400000,
+        "owner_name": "Jay",
+        "owner_role": "Owner",
+        "form_data": json.dumps(property_form)
+    })
+    assert res.status_code == 200, res.text
+    listing_id = res.json()["data"]["id"]
+
+    saved = client.get(f"/api/v1/listings/{listing_id}").json()["data"]
+    assert saved["form_data"] == property_form
+    assert saved["price"] == 5400000
+
+    # Admin edit (PATCH) must not wipe the wizard data
+    fd = {"title": "Edited title", "price": "5500000"}
+    assert client.patch(f"/api/v1/listings/{listing_id}", data=fd).status_code == 200
+    after_edit = client.get(f"/api/v1/listings/{listing_id}").json()["data"]
+    assert after_edit["title"] == "Edited title"
+    assert after_edit["form_data"] == property_form
+
+    business_form = {
+        "kind": "business",
+        "name": "Kakadia Builders",
+        "person": "Jay",
+        "mobile": "9876543210",
+        "whatsapp": "9876543210",
+        "sameAsMobile": True,
+        "email": "jay@example.com",
+        "facebookUrl": "https://facebook.com/kakadia",
+        "websiteUrl": "",
+        "xUrl": "",
+        "pincode": "131001",
+        "city": "Sonipat",
+        "state": "Haryana",
+        "selectedCategories": [{"id": "1", "name": "Builders"}]
+    }
+    res = client.post("/api/v1/listings", data={
+        "title": "Kakadia Builders",
+        "location": "Sonipat",
+        "price": 0,
+        "owner_name": "Jay",
+        "owner_role": "Owner",
+        "form_data": json.dumps(business_form)
+    })
+    assert res.status_code == 200, res.text
+    saved = client.get(f"/api/v1/listings/{res.json()['data']['id']}").json()["data"]
+    assert saved["form_data"] == business_form

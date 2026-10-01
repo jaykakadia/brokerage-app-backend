@@ -200,6 +200,7 @@ class AuthService:
             email=email_clean,
             password_hash=hash_password(req.password),
             role=req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner",
+            business_name=(req.business_name or "").strip() or None,
             status="active",
             listing_limit=1,
             leads_balance=0,

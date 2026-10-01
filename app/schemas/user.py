@@ -20,6 +20,11 @@ class UserRead(UserBase):
     leads_balance: int = 0
     leads_used: int = 0
     plan_expires_at: Optional[datetime] = None
+    business_name: Optional[str] = None
+    whatsapp: Optional[str] = None
+    facebook_url: Optional[str] = None
+    website_url: Optional[str] = None
+    x_url: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -30,6 +35,11 @@ class UserProfileUpdate(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     otp: Optional[str] = None
+    business_name: Optional[str] = Field(None, max_length=150)
+    whatsapp: Optional[str] = Field(None, max_length=30)
+    facebook_url: Optional[str] = Field(None, max_length=500)
+    website_url: Optional[str] = Field(None, max_length=500)
+    x_url: Optional[str] = Field(None, max_length=500)
 
 
 class ChangePasswordRequest(BaseModel):

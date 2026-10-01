@@ -96,3 +96,38 @@ def test_admin_user_management(client, admin_user, test_user):
     })
     forbidden = client.get("/api/v1/admin/users")
     assert forbidden.status_code == 403
+
+
+def test_business_profile_fields_save_without_otp(client, test_user):
+    client.post("/api/v1/auth/login", json={
+        "email": test_user.email,
+        "password": "password123"
+    })
+
+    res = client.put("/api/v1/users/profile", json={
+        "name": test_user.name,
+        "phone": test_user.phone,
+        "email": test_user.email,
+        "business_name": "Doe Realty",
+        "whatsapp": test_user.phone,
+        "facebook_url": "https://facebook.com/doerealty",
+        "website_url": "https://doerealty.in",
+        "x_url": "https://x.com/doerealty"
+    })
+    assert res.status_code == 200
+
+    data = client.get("/api/v1/users/profile").json()["data"]
+    assert data["business_name"] == "Doe Realty"
+    assert data["whatsapp"] == test_user.phone
+    assert data["x_url"] == "https://x.com/doerealty"
+
+    # Blank values clear a field
+    client.put("/api/v1/users/profile", json={"website_url": "  "})
+    assert client.get("/api/v1/users/profile").json()["data"]["website_url"] is None
+
+    # Changing the phone along with business details still needs an OTP
+    blocked = client.put("/api/v1/users/profile", json={
+        "phone": "9000000001",
+        "business_name": "Other"
+    })
+    assert blocked.status_code == 400
