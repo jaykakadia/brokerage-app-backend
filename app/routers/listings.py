@@ -118,8 +118,23 @@ def get_listings(
 
 
 @router.get("/{listing_id}", response_model=APIResponse[ListingRead])
-def get_listing(listing_id: int, db: Session = Depends(get_db)):
-    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+def get_listing(listing_id: str, db: Session = Depends(get_db)):
+    clean_id = listing_id.strip()
+    numeric_part = clean_id
+    if clean_id.upper().startswith("TC011P-"):
+        numeric_part = clean_id[7:]
+    elif clean_id.upper().startswith("TC-"):
+        numeric_part = clean_id[3:]
+
+    listing = None
+    if numeric_part.isdigit():
+        listing = db.query(Listing).filter(Listing.id == int(numeric_part)).first()
+
+    if not listing:
+        listing = db.query(Listing).filter(
+            (Listing.reference_code == clean_id) | (Listing.reference_code == clean_id.upper())
+        ).first()
+
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
     return APIResponse(status="success", data=ListingRead.model_validate(listing))
