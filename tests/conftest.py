@@ -40,6 +40,7 @@ def setup_test_environment():
     test_upload = "./test_uploads"
     settings.UPLOAD_DIR = test_upload
     settings.SMTP_MOCK = True
+    settings.BREVO_API_KEY = ""  # tests must never send real email
     os.makedirs(os.path.join(test_upload, "listings"), exist_ok=True)
     yield
     import shutil

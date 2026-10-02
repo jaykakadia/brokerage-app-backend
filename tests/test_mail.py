@@ -46,7 +46,8 @@ def test_otp_security_and_limits(client, db_session):
     with pytest.raises(HTTPException) as excinfo:
         auth_service.generate_and_store_otp(test_email, "register", db=db_session)
     assert excinfo.value.status_code == 429
-    assert "wait at least 60 seconds" in excinfo.value.detail
+    assert "request a new one in" in excinfo.value.detail
+    assert excinfo.value.headers["Retry-After"]
 
     # 3. Invalid OTP rejected
     is_valid_fake = auth_service.verify_otp(test_email, "register", "000000", consume=False)
@@ -131,3 +132,19 @@ def test_brevo_rejection_reports_failure(monkeypatch):
     monkeypatch.setattr(ms.httpx, "post", lambda *a, **k: FakeResp())
 
     assert mail_service.send_verification_otp("brevo@example.com", "112233") is False
+
+
+def test_failed_send_does_not_start_cooldown(monkeypatch):
+    from fastapi import HTTPException
+    email = "flaky@example.com"
+    auth_service._otp_store.pop((email, "register"), None)
+
+    monkeypatch.setattr(mail_service, "send_verification_otp", lambda *a, **k: False)
+    with pytest.raises(HTTPException) as excinfo:
+        auth_service.generate_and_store_otp(email, "register")
+    assert excinfo.value.status_code == 503
+
+    # The mail service recovers: an immediate retry must go through, not hit the 60s cooldown
+    monkeypatch.setattr(mail_service, "send_verification_otp", lambda *a, **k: True)
+    code = auth_service.generate_and_store_otp(email, "register")
+    assert auth_service.verify_otp(email, "register", code)

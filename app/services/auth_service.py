@@ -14,6 +14,9 @@ from app.schemas.auth import BootstrapAdminRequest, RegisterRequest, LoginReques
 from app.services.mail_service import mail_service
 
 
+OTP_RESEND_COOLDOWN_SECONDS = 60
+
+
 class OTPRecord:
     def __init__(self, hashed_code: str, action: str, expires_at: datetime):
         self.hashed_code = hashed_code
@@ -77,11 +80,14 @@ class AuthService:
         existing = self._otp_store.get(key)
 
         # Rate limit: 60 seconds cooldown between resends
-        if existing and not existing.is_used and (now - existing.created_at).total_seconds() < 60:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Please wait at least 60 seconds before requesting a new OTP."
-            )
+        if existing and not existing.is_used:
+            wait = OTP_RESEND_COOLDOWN_SECONDS - int((now - existing.created_at).total_seconds())
+            if wait > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"An OTP was just sent to this email. Check your inbox, or request a new one in {wait} seconds.",
+                    headers={"Retry-After": str(wait)}
+                )
 
         # Rate limit: max 5 resends per session
         resends = existing.resend_count + 1 if existing else 0
@@ -95,6 +101,22 @@ class AuthService:
         code = str(random.randint(100000, 999999))
         hashed = self._hash_otp(email_clean, code)
         expires_at = now + timedelta(minutes=10)
+
+        # Dispatch via MailService. The OTP is stored only once the email has gone out,
+        # so a failed send never starts the resend cooldown.
+        sent_ok = True
+        if action == "register":
+            sent_ok = mail_service.send_verification_otp(email_clean, code, name=name)
+        elif action == "forgot":
+            sent_ok = mail_service.send_password_reset_otp(email_clean, code)
+        elif action == "profile_update":
+            sent_ok = mail_service.send_profile_verification_otp(email_clean, code)
+
+        if not sent_ok:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to send verification email. Please try again later."
+            )
 
         record = OTPRecord(hashed, action, expires_at)
         record.resend_count = resends
@@ -117,21 +139,6 @@ class AuthService:
                 db.commit()
             except Exception:
                 db.rollback()
-
-        # Dispatch via MailService
-        sent_ok = True
-        if action == "register":
-            sent_ok = mail_service.send_verification_otp(email_clean, code, name=name)
-        elif action == "forgot":
-            sent_ok = mail_service.send_password_reset_otp(email_clean, code)
-        elif action == "profile_update":
-            sent_ok = mail_service.send_profile_verification_otp(email_clean, code)
-
-        if not sent_ok:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Unable to send verification email. Please try again later."
-            )
 
         return code
 
