@@ -157,6 +157,8 @@ def update_user_role(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    if req.role != "Admin" and user.role.lower() == "admin":
+        _guard_admin_removal(db, admin, user)
     user.role = req.role
     db.commit()
     return MessageResponse(status="success", message=f"User role updated to {req.role}.")
@@ -171,6 +173,85 @@ def soft_delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    if user.role.lower() == "admin":
+        _guard_admin_removal(db, admin, user)
     user.status = "deleted"
     db.commit()
     return MessageResponse(status="success", message="User deactivated successfully.")
+
+
+def _guard_admin_removal(db: Session, admin: User, user: User) -> None:
+    """Called before an account loses admin access: admins can't lock themselves out, and at least one active admin must remain."""
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="You cannot remove, deactivate or demote your own admin account.")
+    if user.role.lower() == "admin":
+        active_admins = db.query(User).filter(User.role == "Admin", User.status == "active").count()
+        if user.status == "active" and active_admins <= 1:
+            raise HTTPException(status_code=400, detail="At least one active admin account is required.")
+
+
+@router.put("/admin/users/{user_id}", response_model=APIResponse[UserRead])
+def update_admin_user(
+    user_id: int,
+    req: AdminUserUpdate,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if req.status is not None and req.status not in ("active", "deleted"):
+        raise HTTPException(status_code=400, detail="Status must be 'active' or 'deleted'.")
+    losing_admin = (
+        (req.role is not None and req.role != "Admin")
+        or (req.status is not None and req.status != "active")
+    )
+    if losing_admin and user.role.lower() == "admin":
+        _guard_admin_removal(db, admin, user)
+
+    if req.email is not None:
+        email_clean = req.email.lower().strip()
+        if email_clean != user.email and db.query(User).filter(User.email == email_clean, User.id != user.id).first():
+            raise HTTPException(status_code=409, detail="A user with this email already exists.")
+        user.email = email_clean
+    if req.phone is not None:
+        phone_clean = req.phone.strip()
+        if len(phone_clean) < 5:
+            raise HTTPException(status_code=400, detail="Enter a valid mobile number.")
+        if phone_clean != user.phone and db.query(User).filter(User.phone == phone_clean, User.id != user.id).first():
+            raise HTTPException(status_code=409, detail="A user with this mobile number already exists.")
+        user.phone = phone_clean
+    if req.name is not None:
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="Name cannot be empty.")
+        user.name = req.name.strip()
+    if req.password:
+        if len(req.password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        user.password_hash = hash_password(req.password)
+    if req.role is not None:
+        user.role = req.role
+    if req.status is not None:
+        user.status = req.status
+
+    db.commit()
+    db.refresh(user)
+    return APIResponse(status="success", data=UserRead.model_validate(user))
+
+
+@router.delete("/admin/users/{user_id}", response_model=MessageResponse)
+def delete_admin_user(
+    user_id: int,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Permanently deletes the account and its listings/wishlist; orders and lead reveals are kept with the user cleared."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.role.lower() == "admin":
+        _guard_admin_removal(db, admin, user)
+    db.delete(user)
+    db.commit()
+    return MessageResponse(status="success", message="User deleted permanently.")

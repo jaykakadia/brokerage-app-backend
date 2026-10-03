@@ -165,3 +165,40 @@ def test_admin_create_user(client, admin_user, test_user):
     # Non-admins cannot create users
     forbidden = client.post("/api/v1/admin/users", json={**payload, "email": "x@example.com", "phone": "9000000999"})
     assert forbidden.status_code == 403
+
+
+def test_admin_edit_and_delete_user(client, admin_user, test_user, db_session):
+    from app.db.models.user import User
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+
+    upd = client.put(f"/api/v1/admin/users/{test_user.id}", json={
+        "name": "Renamed", "email": "renamed@example.com", "phone": "9111111111",
+        "role": "Builder", "password": "freshpass123"
+    })
+    assert upd.status_code == 200
+    data = upd.json()["data"]
+    assert (data["name"], data["email"], data["role"]) == ("Renamed", "renamed@example.com", "Builder")
+
+    # Email / phone already used by another account
+    assert client.put(f"/api/v1/admin/users/{test_user.id}", json={"email": admin_user.email}).status_code == 409
+    assert client.put(f"/api/v1/admin/users/{test_user.id}", json={"phone": admin_user.phone}).status_code == 409
+
+    # Admin can't demote, deactivate or delete themselves (also the last admin)
+    assert client.put(f"/api/v1/admin/users/{admin_user.id}", json={"role": "Owner"}).status_code == 400
+    assert client.put(f"/api/v1/admin/users/{admin_user.id}", json={"status": "deleted"}).status_code == 400
+    assert client.post(f"/api/v1/admin/users/{admin_user.id}/role", json={"role": "Owner"}).status_code == 400
+    assert client.delete(f"/api/v1/admin/users/{admin_user.id}").status_code == 400
+
+    # New password works for the edited user
+    client.post("/api/v1/auth/logout")
+    assert client.post("/api/v1/auth/login", json={"email": "renamed@example.com", "password": "freshpass123"}).status_code == 200
+    # Non-admins can't delete
+    assert client.delete(f"/api/v1/admin/users/{admin_user.id}").status_code == 403
+
+    client.post("/api/v1/auth/logout")
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    res = client.delete(f"/api/v1/admin/users/{test_user.id}")
+    assert res.status_code == 200
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == test_user.id).first() is None
+    assert client.delete(f"/api/v1/admin/users/{test_user.id}").status_code == 404
