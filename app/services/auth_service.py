@@ -34,12 +34,45 @@ class AuthService:
         """Securely hash OTP with email salt."""
         return hashlib.sha256(f"{email.lower().strip()}:{code}".encode()).hexdigest()
 
-    def generate_and_store_otp(self, email: str, action: str, db: Optional[Session] = None, name: Optional[str] = None) -> str:
+    def generate_and_store_otp(
+        self,
+        email: str,
+        action: str,
+        db: Optional[Session] = None,
+        name: Optional[str] = None,
+        phone: Optional[str] = None
+    ) -> str:
         """Generates random 6-digit OTP, hashes it, stores with expiry/rate-limit, and dispatches via MailService."""
         email_clean = email.lower().strip()
         key = (email_clean, action)
 
         now = datetime.now(timezone.utc)
+
+        # Database checks before sending OTP
+        if db:
+            if action == "register":
+                existing_email = db.query(User).filter(User.email == email_clean).first()
+                if existing_email:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="This email is already registered. Please sign in."
+                    )
+                if phone and phone.strip():
+                    phone_clean = phone.strip()
+                    existing_phone = db.query(User).filter(User.phone == phone_clean).first()
+                    if existing_phone:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This mobile number is already registered. Please sign in."
+                        )
+            elif action == "forgot":
+                existing_user = db.query(User).filter(User.email == email_clean).first()
+                if not existing_user:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="No account found with this email address."
+                    )
+
         existing = self._otp_store.get(key)
 
         # Rate limit: 60 seconds cooldown between resends
@@ -132,11 +165,19 @@ class AuthService:
         email_clean = req.email.lower().strip()
         
         # Check if user already exists
-        existing = db.query(User).filter(User.email == email_clean).first()
-        if existing:
+        existing_email = db.query(User).filter(User.email == email_clean).first()
+        if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An account with this email address already exists."
+                detail="This email is already registered. Please sign in."
+            )
+
+        phone_clean = req.phone.strip()
+        existing_phone = db.query(User).filter(User.phone == phone_clean).first()
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This mobile number is already registered. Please sign in."
             )
 
         # Validate OTP if provided
