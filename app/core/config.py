@@ -34,7 +34,19 @@ class Settings(BaseSettings):
     COOKIE_DOMAIN: Optional[str] = None
 
     # Storage
+    # "local": files on this server's disk under UPLOAD_DIR (VPS / local dev).
+    # "s3": any S3-compatible bucket (Supabase Storage, Cloudflare R2, AWS S3, Backblaze B2, MinIO).
+    STORAGE_BACKEND: str = "local"
+    # Prefix that turns a stored key into a public URL: "/uploads" for local, or the bucket's
+    # public URL, e.g. "https://<ref>.supabase.co/storage/v1/object/public/<bucket>" or "https://pub-xxxx.r2.dev".
+    MEDIA_BASE_URL: str = "/uploads"
     UPLOAD_DIR: str = "./uploads"
+    # Supabase: https://<ref>.supabase.co/storage/v1/s3 · R2: https://<account_id>.r2.cloudflarestorage.com · AWS: empty
+    S3_ENDPOINT_URL: str = ""
+    S3_BUCKET: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_REGION: str = "auto"  # Supabase: the project's region (e.g. ap-south-1); R2: "auto"
     MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024  # 5 MB
     MAX_IMAGES_PER_LISTING: int = 10
 

@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from app.schemas.user import CanonicalRole
+from app.services.storage_service import public_url
 
 
 class ListingImageRead(BaseModel):
@@ -14,6 +15,11 @@ class ListingImageRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("file_path")
+    def serialize_file_path(self, file_path: str) -> str:
+        # Stored as a storage key; clients get the public URL for the active backend
+        return public_url(file_path)
 
 
 class ListingBase(BaseModel):

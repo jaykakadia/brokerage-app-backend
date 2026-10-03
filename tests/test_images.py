@@ -200,3 +200,71 @@ def test_uploaded_photos_are_resized_and_compressed(client, test_user):
     )
     assert res_broken.status_code == 400
     assert "Invalid or corrupted image" in res_broken.json()["detail"]
+
+
+class _MemoryBackend:
+    """Stands in for an S3/R2 bucket."""
+
+    def __init__(self):
+        self.objects = {}
+
+    def save(self, key, data, content_type):
+        self.objects[key] = (data, content_type)
+
+    def read(self, key):
+        return self.objects[key][0]
+
+    def delete(self, key):
+        return self.objects.pop(key, None) is not None
+
+    def delete_prefix(self, prefix):
+        for key in [k for k in self.objects if k.startswith(prefix)]:
+            del self.objects[key]
+        return True
+
+    def list_keys(self, prefix=""):
+        return [k for k in self.objects if k.startswith(prefix)]
+
+
+def test_bucket_storage_stores_keys_and_serves_public_urls(client, test_user, db_session, monkeypatch):
+    from app.core.config import settings
+    from app.db.models.listing import ListingImage
+
+    bucket = _MemoryBackend()
+    monkeypatch.setattr(storage_service, "backend", bucket)
+    monkeypatch.setattr(settings, "MEDIA_BASE_URL", "https://media.example.com")
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+
+    res = client.post(
+        "/api/v1/listings",
+        data={"title": "R2 photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        files=[("photos", ("a.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg"))]
+    )
+    assert res.status_code == 200, res.text
+    listing = res.json()["data"]
+    image = listing["images"][0]
+
+    # The database holds only the key; the API returns the URL on the configured domain
+    stored = db_session.query(ListingImage).filter(ListingImage.id == image["id"]).one()
+    assert stored.file_path.startswith(f"listings/{listing['id']}/")
+    assert image["file_path"] == f"https://media.example.com/{stored.file_path}"
+    assert bucket.objects[stored.file_path][1] in ("image/jpeg", "image/webp")
+
+    # Removing the photo deletes it from the bucket
+    res_edit = client.patch(f"/api/v1/listings/{listing['id']}", data={"remove_image_ids": str(image["id"])})
+    assert res_edit.status_code == 200, res_edit.text
+    assert stored.file_path not in bucket.objects
+
+
+def test_legacy_upload_paths_still_resolve(monkeypatch):
+    from app.core.config import settings
+    from app.services.storage_service import to_key, public_url
+
+    # Rows saved before storage keys hold "/uploads/listings/..."
+    assert to_key("/uploads/listings/10/a.png") == "listings/10/a.png"
+    assert to_key("listings/10/a.png") == "listings/10/a.png"
+    assert public_url("/uploads/listings/10/a.png") == "/uploads/listings/10/a.png"
+
+    monkeypatch.setattr(settings, "MEDIA_BASE_URL", "https://pub-123.r2.dev/")
+    assert public_url("/uploads/listings/10/a.png") == "https://pub-123.r2.dev/listings/10/a.png"
+    assert to_key("https://pub-123.r2.dev/listings/10/a.png") == "listings/10/a.png"
