@@ -13,7 +13,7 @@ from app.routers.auth import login as auth_login, register as auth_register, sen
 from app.routers.listings import get_listings as listings_get, get_listing as listing_detail, get_listing_counts as listing_counts, create_listing as listing_create, update_listing_status as listing_update_status, delete_listing as listing_delete
 from app.routers.locations import get_cities as loc_cities, get_locations as loc_all, create_location as loc_create, delete_location as loc_delete
 from app.routers.categories import get_categories as cat_all, get_category as cat_single, create_or_save_category as cat_save, delete_category as cat_delete
-from app.routers.users import list_admin_users as users_all, get_admin_user as user_single, create_or_update_admin_user as user_save, update_user_role as user_role_update, soft_delete_user as user_delete
+from app.routers.users import list_admin_users as users_all, get_admin_user as user_single, create_admin_user as user_save, update_user_role as user_role_update, soft_delete_user as user_delete
 from app.schemas.auth import LoginRequest, RegisterRequest, SendOtpRequest, VerifyOtpRequest, ResetPasswordRequest
 from app.schemas.listing import ListingStatusUpdate
 from app.schemas.location import LocationCreate

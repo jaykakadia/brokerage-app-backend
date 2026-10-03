@@ -131,3 +131,37 @@ def test_business_profile_fields_save_without_otp(client, test_user):
         "business_name": "Other"
     })
     assert blocked.status_code == 400
+
+
+def test_admin_create_user(client, admin_user, test_user):
+    client.post("/api/v1/auth/login", json={
+        "email": admin_user.email,
+        "password": "adminpass123"
+    })
+
+    payload = {
+        "name": "New Agent",
+        "phone": "9000000123",
+        "email": "New.Agent@Example.com",
+        "password": "agentpass123",
+        "role": "Agent"
+    }
+    res = client.post("/api/v1/admin/users", json=payload)
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["email"] == "new.agent@example.com"
+    assert data["role"] == "Agent"
+
+    # Duplicate email must not overwrite the existing account
+    dup_email = client.post("/api/v1/admin/users", json={**payload, "phone": "9000000124", "password": "overwrite999"})
+    assert dup_email.status_code == 409
+    dup_phone = client.post("/api/v1/admin/users", json={**payload, "email": "other@example.com", "phone": test_user.phone})
+    assert dup_phone.status_code == 409
+
+    client.post("/api/v1/auth/logout")
+    login = client.post("/api/v1/auth/login", json={"email": "new.agent@example.com", "password": "agentpass123"})
+    assert login.status_code == 200
+
+    # Non-admins cannot create users
+    forbidden = client.post("/api/v1/admin/users", json={**payload, "email": "x@example.com", "phone": "9000000999"})
+    assert forbidden.status_code == 403

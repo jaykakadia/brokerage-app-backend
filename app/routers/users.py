@@ -117,27 +117,22 @@ def get_admin_user(
 
 
 @router.post("/admin/users", response_model=APIResponse[UserRead])
-def create_or_update_admin_user(
+def create_admin_user(
     req: AdminUserCreate,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    # Create-only: never overwrite an existing account (and its password) from this form.
     email_clean = req.email.lower().strip()
-    existing = db.query(User).filter(User.email == email_clean).first()
-    if existing:
-        existing.name = req.name
-        existing.phone = req.phone
-        existing.role = req.role
-        existing.status = req.status
-        if req.password:
-            existing.password_hash = hash_password(req.password)
-        db.commit()
-        db.refresh(existing)
-        return APIResponse(status="success", data=UserRead.model_validate(existing))
+    phone_clean = req.phone.strip()
+    if db.query(User).filter(User.email == email_clean).first():
+        raise HTTPException(status_code=409, detail="A user with this email already exists.")
+    if db.query(User).filter(User.phone == phone_clean).first():
+        raise HTTPException(status_code=409, detail="A user with this mobile number already exists.")
 
     new_user = User(
-        name=req.name,
-        phone=req.phone,
+        name=req.name.strip(),
+        phone=phone_clean,
         email=email_clean,
         password_hash=hash_password(req.password),
         role=req.role,
