@@ -90,7 +90,8 @@ def list_admin_users(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    query = db.query(User).filter(User.status != "deleted")
+    # Deactivated accounts (status "deleted") stay listed so admins can reactivate or permanently delete them.
+    query = db.query(User)
     if role and role.lower() != "all":
         query = query.filter(User.role == role)
     if search:
