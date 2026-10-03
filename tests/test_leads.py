@@ -92,10 +92,13 @@ def test_lead_reveal_and_balance_deduction(client, test_user, owner_and_listing,
     assert rev_fail2.json()["code"] == "no_leads"
 
 
-def test_social_links_locked_until_contact_unlocked(client, test_user, owner_and_listing, db_session):
+def test_contact_and_links_locked_until_unlocked(client, test_user, owner_and_listing, db_session):
     owner, listing = owner_and_listing
     listing.form_data = {
         "bhk": "3BHK",
+        "mobile": "9811100000",
+        "whatsapp": "9811100001",
+        "email": "listing.contact@example.com",
         "websiteUrl": "https://bob.example.com/",
         "youtubeUrl": "https://youtube.com/@bob",
         "facebookUrl": "",
@@ -111,7 +114,8 @@ def test_social_links_locked_until_contact_unlocked(client, test_user, owner_and
     # Anonymous visitors see the listing details but not the links
     fd = form_data(f"/api/v1/listings/{listing.id}")
     assert fd["bhk"] == "3BHK"
-    assert "websiteUrl" not in fd and "youtubeUrl" not in fd
+    for locked in ("mobile", "whatsapp", "email", "websiteUrl", "youtubeUrl"):
+        assert locked not in fd
     assert "websiteUrl" not in form_data("/api/v1/listings")
 
     # Signed in but not unlocked: still hidden
@@ -124,6 +128,10 @@ def test_social_links_locked_until_contact_unlocked(client, test_user, owner_and
     rev = client.post("/api/v1/leads/reveal", json={"listing_id": listing.id}).json()
     assert rev["status"] == "success"
     assert rev["links"] == {"website": "https://bob.example.com/", "youtube": "https://youtube.com/@bob"}
+    # The contact entered on the listing wins over the poster's account details
+    assert rev["contact"]["mobile"] == "9811100000"
+    assert rev["contact"]["whatsapp"] == "9811100001"
+    assert rev["contact"]["email"] == "listing.contact@example.com"
 
     # ...and from then on the listing includes them for this viewer
     assert form_data(f"/api/v1/listings/{listing.id}")["websiteUrl"] == "https://bob.example.com/"

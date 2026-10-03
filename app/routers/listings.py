@@ -19,12 +19,12 @@ from app.services.storage_service import storage_service
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
 
-# Listing links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
-LOCKED_FORM_FIELDS = ("websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+# Contact details and links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
+LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
 
 
 def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool = False) -> dict:
-    """Serializes a listing, leaving out the locked links unless the viewer owns it, is an admin or unlocked it."""
+    """Serializes a listing, leaving out locked contact fields unless the viewer owns it, is an admin or unlocked it."""
     data = ListingRead.model_validate(listing).model_dump()
     can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
     if not can_see and isinstance(data.get("form_data"), dict):

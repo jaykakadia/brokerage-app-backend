@@ -46,10 +46,18 @@ def reveal_contact(
     owner_email = owner.email if owner else ""
 
     form_data = listing.form_data if isinstance(listing.form_data, dict) else {}
+
+    def form_value(key: str) -> str:
+        value = form_data.get(key)
+        return value.strip() if isinstance(value, str) else ""
+
+    # The contact the poster entered on the listing, falling back to their account details
+    mobile = form_value("mobile") or owner_phone
     contact_data = {
-        "person": listing.owner_name or (owner.name if owner else "Property Owner"),
-        "mobile": owner_phone,
-        "email": owner_email
+        "person": form_value("person") or listing.owner_name or (owner.name if owner else "Property Owner"),
+        "mobile": mobile,
+        "whatsapp": form_value("whatsapp") or mobile,
+        "email": form_value("email") or owner_email
     }
     # Social links stay hidden on the listing until the contact is unlocked
     links = {
