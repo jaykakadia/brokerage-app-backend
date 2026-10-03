@@ -165,14 +165,13 @@ class S3Backend:
     def delete_prefix(self, prefix: str) -> bool:
         if not _is_safe_key(prefix):
             return False
+        # One request per file: Supabase's S3 endpoint rejects bulk DeleteObjects, and a listing
+        # holds at most MAX_IMAGES_PER_LISTING photos.
         try:
             keys = list(self.list_keys(prefix))
-            for start in range(0, len(keys), 1000):
-                batch = [{"Key": k} for k in keys[start:start + 1000]]
-                self.client.delete_objects(Bucket=self.bucket, Delete={"Objects": batch, "Quiet": True})
-            return True
         except Exception:
             return False
+        return all([self.delete(key) for key in keys])
 
     def list_keys(self, prefix: str = "") -> Iterator[str]:
         paginator = self.client.get_paginator("list_objects_v2")
