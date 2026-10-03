@@ -45,10 +45,17 @@ def reveal_contact(
     owner_phone = owner.phone if owner else "Not available"
     owner_email = owner.email if owner else ""
 
+    form_data = listing.form_data if isinstance(listing.form_data, dict) else {}
     contact_data = {
         "person": listing.owner_name or (owner.name if owner else "Property Owner"),
         "mobile": owner_phone,
         "email": owner_email
+    }
+    # Social links stay hidden on the listing until the contact is unlocked
+    links = {
+        name: form_data.get(key) for name, key in (
+            ("website", "websiteUrl"), ("facebook", "facebookUrl"), ("x", "xUrl"), ("youtube", "youtubeUrl")
+        ) if isinstance(form_data.get(key), str) and form_data.get(key).strip()
     }
 
     # 1. Idempotency Check: Already revealed by this user?
@@ -62,6 +69,7 @@ def reveal_contact(
             "status": "success",
             "already_revealed": True,
             "contact": contact_data,
+            "links": links,
             "plan": {
                 "leads_remaining": current_user.leads_balance,
                 "leads_used": current_user.leads_used,
@@ -105,6 +113,7 @@ def reveal_contact(
         "status": "success",
         "already_revealed": False,
         "contact": contact_data,
+        "links": links,
         "plan": {
             "leads_remaining": locked_user.leads_balance,
             "leads_used": locked_user.leads_used,

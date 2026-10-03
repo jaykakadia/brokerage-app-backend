@@ -8,6 +8,7 @@ from sqlalchemy import func
 
 from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
 from app.db.models.listing import Listing, ListingImage
+from app.db.models.lead import LeadReveal
 from app.db.models.user import User
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.listing import (
@@ -16,6 +17,19 @@ from app.schemas.listing import (
 from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
+
+
+# Listing links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
+LOCKED_FORM_FIELDS = ("websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+
+
+def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool = False) -> dict:
+    """Serializes a listing, leaving out the locked links unless the viewer owns it, is an admin or unlocked it."""
+    data = ListingRead.model_validate(listing).model_dump()
+    can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
+    if not can_see and isinstance(data.get("form_data"), dict):
+        data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
+    return data
 
 
 def _expire_featured(db: Session) -> None:
@@ -125,13 +139,17 @@ def get_listings(
 
     return {
         "status": "success",
-        "data": [ListingRead.model_validate(l).model_dump() for l in listings],
+        "data": [_listing_for_viewer(l, user) for l in listings],
         "ref_summary": ref_summary
     }
 
 
 @router.get("/{listing_id}", response_model=APIResponse[ListingRead])
-def get_listing(listing_id: str, db: Session = Depends(get_db)):
+def get_listing(
+    listing_id: str,
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
     _expire_featured(db)
     clean_id = listing_id.strip()
     numeric_part = clean_id
@@ -151,7 +169,10 @@ def get_listing(listing_id: str, db: Session = Depends(get_db)):
 
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
-    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+    unlocked = user is not None and db.query(LeadReveal).filter(
+        LeadReveal.user_id == user.id, LeadReveal.listing_id == listing.id
+    ).first() is not None
+    return APIResponse(status="success", data=_listing_for_viewer(listing, user, unlocked))
 
 
 @router.post("", response_model=APIResponse[ListingRead])

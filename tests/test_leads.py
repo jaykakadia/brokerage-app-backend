@@ -90,3 +90,40 @@ def test_lead_reveal_and_balance_deduction(client, test_user, owner_and_listing,
     rev_fail2 = client.post("/api/v1/leads/reveal", json={"listing_id": listing2.id})
     assert rev_fail2.status_code == 200
     assert rev_fail2.json()["code"] == "no_leads"
+
+
+def test_social_links_locked_until_contact_unlocked(client, test_user, owner_and_listing, db_session):
+    owner, listing = owner_and_listing
+    listing.form_data = {
+        "bhk": "3BHK",
+        "websiteUrl": "https://bob.example.com/",
+        "youtubeUrl": "https://youtube.com/@bob",
+        "facebookUrl": "",
+    }
+    db_session.commit()
+
+    def form_data(path):
+        res = client.get(path)
+        assert res.status_code == 200
+        data = res.json()["data"]
+        return (data if isinstance(data, dict) else next(l for l in data if l["id"] == listing.id))["form_data"]
+
+    # Anonymous visitors see the listing details but not the links
+    fd = form_data(f"/api/v1/listings/{listing.id}")
+    assert fd["bhk"] == "3BHK"
+    assert "websiteUrl" not in fd and "youtubeUrl" not in fd
+    assert "websiteUrl" not in form_data("/api/v1/listings")
+
+    # Signed in but not unlocked: still hidden
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    assert "websiteUrl" not in form_data(f"/api/v1/listings/{listing.id}")
+
+    # Unlocking returns the non-empty links...
+    test_user.leads_balance = 1
+    db_session.commit()
+    rev = client.post("/api/v1/leads/reveal", json={"listing_id": listing.id}).json()
+    assert rev["status"] == "success"
+    assert rev["links"] == {"website": "https://bob.example.com/", "youtube": "https://youtube.com/@bob"}
+
+    # ...and from then on the listing includes them for this viewer
+    assert form_data(f"/api/v1/listings/{listing.id}")["websiteUrl"] == "https://bob.example.com/"
