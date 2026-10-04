@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production
+  group: deploy-backend
   cancel-in-progress: false
 
 jobs:
@@ -27,7 +27,6 @@ jobs:
 
       - name: Run tests
         env:
-          ENVIRONMENT: test
           RAZORPAY_MOCK: "true"
           SMTP_MOCK: "true"
         run: python -m pytest -q
@@ -38,49 +37,26 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://api.tradecall.in/health
+      url: https://tradecall.in
     steps:
-      - uses: actions/checkout@v4
-
       - name: Configure SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Sync code
+      - name: Pull, install, migrate & restart
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          echo "$GITHUB_SHA" > REVISION
-          # --delete keeps the server in step with the repo; server-only files
-          # (.env, uploads, Passenger's tmp/ and public/) are excluded so they survive.
-          rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
-            --exclude '.git/' --exclude '.github/' --exclude 'venv/' --exclude 'tests/' \
-            --exclude '.env' --exclude 'uploads/' --exclude 'tmp/' --exclude 'public/' \
-            --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '*.db' \
-            --exclude 'Dockerfile' --exclude 'docker-compose.yml' --exclude '.DS_Store' \
-            ./ "$SSH_USER@$SSH_HOST:tradecall-api/"
-
-      - name: Install, migrate & restart
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-        run: ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'bash tradecall-api/scripts/deploy_cpanel.sh'
-
-      - name: Health check
-        run: |
-          for i in $(seq 1 10); do
-            if curl -fsS https://api.tradecall.in/health; then exit 0; fi
-            sleep 6
-          done
-          echo "Health check failed" >&2
-          exit 1
+          ssh -i ~/.ssh/deploy_key "deploy@$VPS_HOST" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/tradecall/brokerage-app-backend
+          git fetch --quiet origin main
+          git reset --hard "$1"
+          bash scripts/deploy_vps.sh
+          REMOTE
