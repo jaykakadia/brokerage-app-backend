@@ -1,0 +1,86 @@
+name: Test & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          ENVIRONMENT: test
+          RAZORPAY_MOCK: "true"
+          SMTP_MOCK: "true"
+        run: python -m pytest -q
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.tradecall.in/health
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Sync code
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          echo "$GITHUB_SHA" > REVISION
+          # --delete keeps the server in step with the repo; server-only files
+          # (.env, uploads, Passenger's tmp/ and public/) are excluded so they survive.
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
+            --exclude '.git/' --exclude '.github/' --exclude 'venv/' --exclude 'tests/' \
+            --exclude '.env' --exclude 'uploads/' --exclude 'tmp/' --exclude 'public/' \
+            --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '*.db' \
+            --exclude 'Dockerfile' --exclude 'docker-compose.yml' --exclude '.DS_Store' \
+            ./ "$SSH_USER@$SSH_HOST:tradecall-api/"
+
+      - name: Install, migrate & restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'bash tradecall-api/scripts/deploy_cpanel.sh'
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS https://api.tradecall.in/health; then exit 0; fi
+            sleep 6
+          done
+          echo "Health check failed" >&2
+          exit 1
