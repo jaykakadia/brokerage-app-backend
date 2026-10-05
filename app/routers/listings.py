@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
@@ -30,6 +30,16 @@ def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool =
     if not can_see and isinstance(data.get("form_data"), dict):
         data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
     return data
+
+
+def _listing_city(location: Optional[str], form_data) -> Optional[str]:
+    """City of a listing: the wizard's city field, else the city part of "Locality, City, State"."""
+    if isinstance(form_data, dict) and str(form_data.get("city") or "").strip():
+        return str(form_data["city"]).strip()
+    parts = [p.strip() for p in (location or "").split(",") if p.strip()]
+    if not parts:
+        return None
+    return parts[-2] if len(parts) >= 3 else parts[0]
 
 
 def _expire_featured(db: Session) -> None:
@@ -71,14 +81,23 @@ def get_public_stats(db: Session = Depends(get_db)):
     featured = db.query(func.count(Listing.id)).filter(
         Listing.status == "approved", Listing.is_featured == True
     ).scalar() or 0
-    cities = db.query(func.count(func.distinct(Listing.location))).filter(
-        Listing.status == "approved", Listing.location.isnot(None)
-    ).scalar() or 0
+    # One listing's location reads "Palwal", "Palwal, Haryana" or "Omaxe City, Palwal, Haryana",
+    # so cities are counted by the city name, not the distinct location text
+    approved = db.query(Listing.location, Listing.form_data, Listing.created_at).filter(
+        Listing.status == "approved"
+    ).all()
+    cities = {c.lower() for c in (_listing_city(loc, fd) for loc, fd, _ in approved) if c}
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    new_this_week = sum(
+        1 for _, _, created in approved
+        if created and (created if created.tzinfo else created.replace(tzinfo=timezone.utc)) >= week_ago
+    )
     users = db.query(func.count(User.id)).scalar() or 0
     return {
         "active_listings": active,
         "featured_listings": featured,
-        "cities_covered": cities,
+        "cities_covered": len(cities),
+        "new_this_week": new_this_week,
         "registered_users": users,
     }
 
