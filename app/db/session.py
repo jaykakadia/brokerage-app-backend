@@ -7,6 +7,11 @@ from app.core.config import settings
 connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+elif settings.DATABASE_URL.startswith("postgresql+psycopg"):
+    # Supabase's transaction pooler (pgbouncer, port 6543) hands each transaction
+    # a different backend, so psycopg's auto-prepared statements collide
+    # ("prepared statement _pg3_N already exists"). Disable server-side prepares.
+    connect_args = {"prepare_threshold": None}
 
 engine = create_engine(
     settings.DATABASE_URL,
