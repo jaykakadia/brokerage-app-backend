@@ -57,12 +57,12 @@ class Settings(BaseSettings):
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
-    # Razorpay Payments
-    RAZORPAY_KEY_ID: str = "rzp_test_placeholder"
-    RAZORPAY_KEY_SECRET: str = "rzp_test_secret_placeholder"
-    RAZORPAY_WEBHOOK_SECRET: str = "rzp_test_webhook_secret_placeholder"
-    RAZORPAY_MOCK: bool = True
-    RAZORPAY_TEST_MODE: bool = True
+    # Cashfree Payments
+    CASHFREE_APP_ID: str = ""
+    CASHFREE_SECRET_KEY: str = ""
+    CASHFREE_ENVIRONMENT: str = "sandbox"  # sandbox | production
+    CASHFREE_API_VERSION: str = "2025-01-01"
+    CASHFREE_MOCK: bool = False  # true only for local dev/tests: orders are treated as paid
 
     # SMTP Mail Service
     SMTP_HOST: str = "smtp.gmail.com"

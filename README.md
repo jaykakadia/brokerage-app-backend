@@ -37,7 +37,7 @@ TradeCall India is a real-estate and business directory. This service exposes th
 
 - **Accounts and access:** registration and email OTP flows, cookie-based JWT sessions, CSRF protection, profile management, role-based access, and admin user management.
 - **Listings:** searchable listings, listing submission with images, moderation states, role-based posting limits, and Field Associate attribution.
-- **Plans and leads:** subscription plan management, Razorpay orders and payment verification, webhook reconciliation, lead credits, and contact reveal.
+- **Plans and leads:** subscription plan management, Cashfree orders and payment verification, webhook reconciliation, lead credits, and contact reveal.
 - **Buyer tools:** authenticated wishlist operations and listing statistics.
 - **Operations:** manage locations, categories, users, Field Associates, blogs, payment settings, and SMTP settings.
 - **Email and payments:** mock modes for local development; runtime SMTP configuration and encrypted stored SMTP credentials; payment signature verification and idempotent crediting.
@@ -49,7 +49,7 @@ TradeCall India is a real-estate and business directory. This service exposes th
 | Runtime and API           | Python 3.12, FastAPI, Uvicorn                           |
 | Persistence               | SQLAlchemy 2.x, SQLite or PostgreSQL, Alembic           |
 | Schemas and configuration | Pydantic v2, pydantic-settings                          |
-| Integrations              | Razorpay HTTP API, SMTP, `httpx`                        |
+| Integrations              | Cashfree PG HTTP API, SMTP, `httpx`                     |
 | Tests                     | pytest, FastAPI TestClient, SQLite in-memory by default |
 
 ## Requirements
@@ -111,9 +111,9 @@ Settings are loaded from environment variables and `.env` by `pydantic-settings`
 | `COOKIE_SAMESITE`, `COOKIE_DOMAIN`                  | Authentication cookie policy and optional domain                          |
 | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_BYTES`               | Upload storage directory and per-file limit                               |
 | `SMTP_*`, `SMTP_MOCK`                               | SMTP connection details and local mock mode                               |
-| `RAZORPAY_*`, `RAZORPAY_MOCK`, `RAZORPAY_TEST_MODE` | Gateway keys, webhook secret, and test controls                           |
+| `CASHFREE_*`, `CASHFREE_MOCK`                       | Gateway App ID, secret key, environment, and local mock mode              |
 
-Generate unique secret values for `SECRET_KEY`, `JWT_SECRET_KEY`, and `CSRF_SECRET_KEY` before deployment (for example, with `openssl rand -hex 32`). Keep them outside source control. Changing `SECRET_KEY` can make previously encrypted SMTP credentials unreadable. Leave SMTP and Razorpay mock modes enabled for local development; configure real credentials before disabling them.
+Generate unique secret values for `SECRET_KEY`, `JWT_SECRET_KEY`, and `CSRF_SECRET_KEY` before deployment (for example, with `openssl rand -hex 32`). Keep them outside source control. Changing `SECRET_KEY` can make previously encrypted SMTP credentials unreadable. Leave SMTP and Cashfree mock modes enabled for local development; configure real credentials before disabling them.
 
 For the frontend at `http://localhost:5173`, include that exact origin in `ALLOWED_ORIGINS`. Credentialed requests require explicit allowed origins.
 
@@ -172,6 +172,6 @@ docker compose exec backend alembic upgrade head
 - Use HTTPS, unique high-entropy secrets, `COOKIE_SECURE=true`, and an explicit `ALLOWED_ORIGINS` list.
 - Set `DEBUG=false`; never use development secret defaults in a deployed environment.
 - Configure a managed PostgreSQL database, apply migrations as a deployment step, and back up the database.
-- Set `SMTP_MOCK=false` and `RAZORPAY_MOCK=false` only after valid production credentials are configured. Set `RAZORPAY_TEST_MODE=false` for live payment verification.
+- Set `SMTP_MOCK=false` and `CASHFREE_MOCK=false` only after valid credentials are configured. Set `CASHFREE_ENVIRONMENT=production` for live payments, and point the Cashfree dashboard webhook at `/api/v1/payments/webhook`.
 - Persist uploaded media outside ephemeral container storage and include it in backup/retention plans.
 - Keep `.env`, payment secrets, and mail credentials out of Git and logs.

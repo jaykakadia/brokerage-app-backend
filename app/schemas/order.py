@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from app.schemas.plan import PlanRead
 
 
@@ -12,19 +12,16 @@ class CreateOrderRequest(BaseModel):
 
 class CreateOrderResponse(BaseModel):
     status: str = "success"
-    key_id: str
-    amount: int  # amount in paise
-    currency: str = "INR"
     order_id: str
+    payment_session_id: str
+    environment: str  # "sandbox" | "production" | "mock" (Cashfree JS SDK mode)
+    amount: float  # in rupees
+    currency: str = "INR"
     plan: PlanRead
-    prefill: Dict[str, str] = {}
 
 
 class VerifyPaymentRequest(BaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
-    plan_id: Optional[int] = None
+    order_id: str
 
 
 class VerifyPaymentResponse(BaseModel):
@@ -37,8 +34,8 @@ class OrderRead(BaseModel):
     id: int
     user_id: Optional[int] = None
     plan_id: Optional[int] = None
-    razorpay_order_id: str
-    razorpay_payment_id: Optional[str] = None
+    cashfree_order_id: str
+    cashfree_payment_id: Optional[str] = None
     amount: float
     currency: str
     status: str
@@ -47,17 +44,7 @@ class OrderRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class RazorpaySettingsRead(BaseModel):
-    razorpay_key_id: str
-    key_id: Optional[str] = None
-    has_secret: bool
-    test_mode: Optional[bool] = True
-
-
-class RazorpaySettingsUpdate(BaseModel):
-    razorpay_key_id: Optional[str] = None
-    razorpay_key_secret: Optional[str] = None
-    key_id: Optional[str] = None
-    key_secret: Optional[str] = None
-    webhook_secret: Optional[str] = None
-    test_mode: Optional[bool] = None
+class CashfreeSettingsUpdate(BaseModel):
+    app_id: Optional[str] = None
+    secret_key: Optional[str] = None
+    environment: Optional[str] = None  # sandbox | production

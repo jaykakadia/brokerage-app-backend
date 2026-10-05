@@ -1,9 +1,13 @@
+import base64
 import hmac
 import hashlib
 import json
 import pytest
 from app.db.models.plan import Plan
 from app.core.config import settings
+from app.services.cashfree_service import cashfree_service
+
+WEBHOOK_SECRET = "cf_test_secret"
 
 
 @pytest.fixture
@@ -23,7 +27,15 @@ def active_plan(db_session):
     return plan
 
 
-def test_payment_and_razorpay_flow(client, test_user, active_plan, admin_user):
+def _webhook_headers(body: bytes, timestamp: str = "1700000000") -> dict:
+    sig = base64.b64encode(
+        hmac.new(WEBHOOK_SECRET.encode("utf-8"), timestamp.encode("utf-8") + body, hashlib.sha256).digest()
+    ).decode("utf-8")
+    return {"x-webhook-signature": sig, "x-webhook-timestamp": timestamp, "Content-Type": "application/json"}
+
+
+def test_payment_and_cashfree_flow(client, test_user, active_plan, admin_user, monkeypatch):
+    monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", WEBHOOK_SECRET)
     # 1. Log in as test user
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
 
@@ -40,97 +52,77 @@ def test_payment_and_razorpay_flow(client, test_user, active_plan, admin_user):
     assert order_res.status_code == 200
     order_data = order_res.json()
     assert order_data["status"] == "success"
-    assert order_data["amount"] == 149900  # 1499 * 100 paise
+    assert order_data["amount"] == 1499.0
     assert order_data["currency"] == "INR"
+    assert order_data["environment"] == "mock"
+    assert order_data["payment_session_id"]
     order_id = order_data["order_id"]
-    assert order_id.startswith("order_")
+    assert order_id.startswith(f"tc_{test_user.id}_")
 
-    # 4. Verify payment with fake/invalid signature -> 400
-    fake_verify = client.post("/api/v1/payments/verify", json={
-        "razorpay_order_id": order_id,
-        "razorpay_payment_id": "pay_fake12345",
-        "razorpay_signature": "invalidsignature123",
-        "plan_id": active_plan.id
-    })
-    assert fake_verify.status_code == 400
-    assert "Invalid Razorpay signature" in fake_verify.json()["detail"]
+    # 4. Unknown order -> 404; unpaid order (Cashfree reports no successful payment) -> 400
+    assert client.post("/api/v1/payments/verify", json={"order_id": "tc_missing"}).status_code == 404
+    with monkeypatch.context() as m:
+        m.setattr(cashfree_service, "get_successful_payment", lambda **kw: None)
+        unpaid = client.post("/api/v1/payments/verify", json={"order_id": order_id})
+    assert unpaid.status_code == 400
+    assert "payment not completed" in unpaid.json()["detail"]
 
-    # 5. Compute real valid signature using server secret
-    payment_id = "pay_test98765"
-    payload = f"{order_id}|{payment_id}".encode("utf-8")
-    valid_signature = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-
-    # 6. Verify payment with valid signature -> 200 OK
-    ok_verify = client.post("/api/v1/payments/verify", json={
-        "razorpay_order_id": order_id,
-        "razorpay_payment_id": payment_id,
-        "razorpay_signature": valid_signature,
-        "plan_id": active_plan.id
-    })
+    # 5. Paid order -> 200 OK and credited
+    ok_verify = client.post("/api/v1/payments/verify", json={"order_id": order_id})
     assert ok_verify.status_code == 200
     verify_data = ok_verify.json()
     assert verify_data["status"] == "success"
     assert verify_data["plan"]["leads_balance"] == initial_leads + active_plan.leads_count
     assert verify_data["plan"]["listing_limit"] == initial_limits + active_plan.listing_limit
 
-    # 7. Idempotency test: Re-submitting the exact same payment verification MUST NOT double-credit!
-    dup_verify = client.post("/api/v1/payments/verify", json={
-        "razorpay_order_id": order_id,
-        "razorpay_payment_id": payment_id,
-        "razorpay_signature": valid_signature,
-        "plan_id": active_plan.id
-    })
+    # 6. Idempotency test: Re-submitting the same verification MUST NOT double-credit!
+    dup_verify = client.post("/api/v1/payments/verify", json={"order_id": order_id})
     assert dup_verify.status_code == 200
-    # Balance must remain unchanged!
     assert dup_verify.json()["plan"]["leads_balance"] == initial_leads + active_plan.leads_count
 
-    # 8. Webhook test: Create another order and verify via webhook
-    order_res2 = client.post("/api/v1/payments/create-order", json={"plan_id": active_plan.id})
-    order_id2 = order_res2.json()["order_id"]
-    webhook_payment_id = "pay_webhook_12345"
-
+    # 7. Webhook test: Create another order and confirm it via webhook
+    order_id2 = client.post("/api/v1/payments/create-order", json={"plan_id": active_plan.id}).json()["order_id"]
     webhook_payload = json.dumps({
-        "event": "payment.captured",
-        "payload": {
-            "payment": {
-                "entity": {
-                    "id": webhook_payment_id,
-                    "order_id": order_id2,
-                    "amount": 149900,
-                    "status": "captured"
-                }
-            }
+        "type": "PAYMENT_SUCCESS_WEBHOOK",
+        "data": {
+            "order": {"order_id": order_id2, "order_amount": 1499.0},
+            "payment": {"cf_payment_id": 5114910123, "payment_status": "SUCCESS", "payment_amount": 1499.0}
         }
     }).encode("utf-8")
-
-    # Compute valid webhook signature
-    webhook_sig = hmac.new(settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"), webhook_payload, hashlib.sha256).hexdigest()
-
-    # Post webhook
-    wh_res = client.post(
-        "/api/v1/payments/webhook",
-        content=webhook_payload,
-        headers={"X-Razorpay-Signature": webhook_sig, "Content-Type": "application/json"}
-    )
+    wh_res = client.post("/api/v1/payments/webhook", content=webhook_payload, headers=_webhook_headers(webhook_payload))
     assert wh_res.status_code == 200
     assert wh_res.json()["status"] == "ok"
+    leads = client.get("/api/v1/leads/status").json()["leads_balance"]
+    assert leads == initial_leads + 2 * active_plan.leads_count
 
-    # 9. Admin Settings: Razorpay credentials test
+    # 8. Admin Settings: Cashfree credentials test
     client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
     settings_res = client.get("/api/v1/payments/admin/settings")
     assert settings_res.status_code == 200
-    assert "razorpay_key_id" in settings_res.json()["data"]
+    data = settings_res.json()["data"]
+    assert "app_id" in data and "has_secret" in data and "environment" in data
     # Secret must never be exposed!
-    assert "razorpay_key_secret" not in settings_res.json()["data"]
-    assert "has_secret" in settings_res.json()["data"]
+    assert "secret_key" not in data
 
-    # Save new settings
     save_res = client.post("/api/v1/payments/admin/settings", json={
-        "razorpay_key_id": "rzp_test_new_key_123",
-        "razorpay_key_secret": "new_secret_456"
+        "app_id": "TEST_new_app_123",
+        "secret_key": "new_secret_456",
+        "environment": "production"
     })
     assert save_res.status_code == 200
-    assert save_res.json()["status"] == "success"
+    assert save_res.json()["data"] == {"app_id": "TEST_new_app_123", "has_secret": True, "environment": "production"}
+
+    bad_env = client.post("/api/v1/payments/admin/settings", json={"environment": "live"})
+    assert bad_env.status_code == 400
+
+
+def test_live_mode_without_credentials_refuses_orders(client, test_user, active_plan, monkeypatch):
+    monkeypatch.setattr(settings, "CASHFREE_MOCK", False)
+    monkeypatch.setattr(settings, "CASHFREE_APP_ID", "")
+    monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", "")
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    res = client.post("/api/v1/payments/create-order", json={"plan_id": active_plan.id})
+    assert res.status_code == 503
 
 
 def test_featured_plan_features_one_listing(client, db_session, test_user, admin_user):
@@ -162,12 +154,7 @@ def test_featured_plan_features_one_listing(client, db_session, test_user, admin
 
     order_id = client.post("/api/v1/payments/create-order",
                            json={"plan_id": featured_plan.id, "listing_id": mine.id}).json()["order_id"]
-    payment_id = "pay_featured1"
-    signature = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"),
-                         f"{order_id}|{payment_id}".encode("utf-8"), hashlib.sha256).hexdigest()
-    verify = client.post("/api/v1/payments/verify", json={
-        "razorpay_order_id": order_id, "razorpay_payment_id": payment_id, "razorpay_signature": signature
-    })
+    verify = client.post("/api/v1/payments/verify", json={"order_id": order_id})
     assert verify.status_code == 200
     assert verify.json()["plan"]["listing_id"] == mine.id
 

@@ -19,9 +19,10 @@ class Order(Base):
     listing_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("listings.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    razorpay_order_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    razorpay_payment_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
-    razorpay_signature: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Our order_id sent to Cashfree, and the session the browser checkout opens with
+    cashfree_order_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    cashfree_payment_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
+    payment_session_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="created", index=True, nullable=False)  # created, paid, failed
