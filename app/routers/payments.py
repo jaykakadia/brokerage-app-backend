@@ -1,11 +1,14 @@
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional
+from typing import Optional
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_current_admin, get_db
+from app.core.security import encrypt_secret, decrypt_secret
 from app.db.models.user import User
 from app.db.models.plan import Plan
 from app.db.models.order import Order
@@ -14,22 +17,35 @@ from app.db.models.setting import SystemSetting
 from app.schemas.order import (
     CreateOrderRequest, CreateOrderResponse,
     VerifyPaymentRequest, VerifyPaymentResponse,
-    RazorpaySettingsRead, RazorpaySettingsUpdate
+    CashfreeSettingsUpdate
 )
 from app.schemas.plan import PlanRead
-from app.services.razorpay_service import razorpay_service
+from app.services.cashfree_service import cashfree_service
 
 router = APIRouter(prefix="/api/v1/payments", tags=["Payments"])
 
 
-def _get_active_razorpay_credentials(db: Session) -> tuple[str, str]:
-    """Retrieves active Razorpay Key ID and Key Secret from system_settings or env fallback."""
-    key_id_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_id").first()
-    key_secret_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_secret").first()
+def _get_setting(db: Session, key: str) -> Optional[str]:
+    row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    return row.value if row and row.value else None
 
-    key_id = key_id_setting.value if key_id_setting and key_id_setting.value else settings.RAZORPAY_KEY_ID
-    key_secret = key_secret_setting.value if key_secret_setting and key_secret_setting.value else settings.RAZORPAY_KEY_SECRET
-    return key_id, key_secret
+
+def _get_active_cashfree_credentials(db: Session) -> tuple[str, str, str]:
+    """Returns (app_id, secret_key, environment) from system_settings, falling back to env."""
+    app_id = _get_setting(db, "cashfree_app_id") or settings.CASHFREE_APP_ID
+    stored_secret = _get_setting(db, "cashfree_secret_key")
+    secret_key = decrypt_secret(stored_secret) if stored_secret else settings.CASHFREE_SECRET_KEY
+    environment = _get_setting(db, "cashfree_environment") or settings.CASHFREE_ENVIRONMENT
+    return app_id, secret_key, environment
+
+
+def _checkout_mode(environment: str) -> str:
+    return "mock" if cashfree_service.is_mock() else environment
+
+
+def _require_credentials(app_id: str, secret_key: str) -> None:
+    if not cashfree_service.is_mock() and not (app_id and secret_key):
+        raise HTTPException(status_code=503, detail="Online payments are not configured yet. Please try again later.")
 
 
 def _extend_from(current: Optional[datetime], days: int) -> datetime:
@@ -41,7 +57,7 @@ def _extend_from(current: Optional[datetime], days: int) -> datetime:
     return start_date + timedelta(days=days)
 
 
-def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[str] = None, signature: Optional[str] = None) -> User:
+def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[str] = None) -> User:
     """
     Atomically marks order as paid and credits user plan, leads balance, and validity.
     Idempotent: if order is already paid, simply returns the user without double-crediting.
@@ -51,9 +67,7 @@ def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[
 
     order.status = "paid"
     if payment_id:
-        order.razorpay_payment_id = payment_id
-    if signature:
-        order.razorpay_signature = signature
+        order.cashfree_payment_id = payment_id
 
     user = db.query(User).filter(User.id == order.user_id).with_for_update().first()
     if user and order.plan and order.plan.plan_type == "featured":
@@ -82,7 +96,8 @@ def create_order(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a server-side Razorpay order for the selected plan.
+    Creates a server-side Cashfree order for the selected plan and returns the
+    payment_session_id the browser checkout opens with.
     Price is always loaded strictly from the database (never trusted from frontend).
     """
     plan = db.query(Plan).filter(Plan.id == req.plan_id, Plan.status == "active").first()
@@ -98,8 +113,9 @@ def create_order(
             raise HTTPException(status_code=400, detail="Only approved listings can be featured.")
         listing_id = listing.id
 
-    key_id, key_secret = _get_active_razorpay_credentials(db)
-    amount_in_paise = int(round(float(plan.price) * 100))
+    app_id, secret_key, environment = _get_active_cashfree_credentials(db)
+    _require_credentials(app_id, secret_key)
+    amount = round(float(plan.price), 2)
 
     # Idempotency check if idempotency_key is provided
     if req.idempotency_key:
@@ -107,61 +123,61 @@ def create_order(
             Order.idempotency_key == req.idempotency_key,
             Order.user_id == current_user.id
         ).first()
-        if existing_order and existing_order.status == "created":
+        if existing_order and existing_order.status == "created" and existing_order.payment_session_id:
             return CreateOrderResponse(
-                status="success",
-                key_id=key_id,
-                amount=int(round(float(existing_order.amount) * 100)),
+                order_id=existing_order.cashfree_order_id,
+                payment_session_id=existing_order.payment_session_id,
+                environment=_checkout_mode(environment),
+                amount=float(existing_order.amount),
                 currency=existing_order.currency,
-                order_id=existing_order.razorpay_order_id,
                 plan=PlanRead.model_validate(plan),
-                prefill={
-                    "name": current_user.name,
-                    "email": current_user.email,
-                    "contact": current_user.phone
-                }
             )
 
-    rzp_order = razorpay_service.create_order(
-        amount_in_paise=amount_in_paise,
-        currency="INR",
-        receipt=f"rcpt_u{current_user.id}_p{plan.id}",
-        notes={
-            "user_id": str(current_user.id),
-            "plan_id": str(plan.id),
-            **({"listing_id": str(listing_id)} if listing_id else {})
-        },
-        key_id=key_id,
-        key_secret=key_secret
-    )
+    tags = {
+        "user_id": str(current_user.id),
+        "plan_id": str(plan.id),
+        **({"listing_id": str(listing_id)} if listing_id else {})
+    }
+    try:
+        cf_order = cashfree_service.create_order(
+            order_id=f"tc_{current_user.id}_{uuid.uuid4().hex[:16]}",
+            amount=amount,
+            customer={
+                "customer_id": f"user_{current_user.id}",
+                "customer_name": current_user.name,
+                "customer_email": current_user.email,
+                "customer_phone": current_user.phone,
+            },
+            app_id=app_id,
+            secret_key=secret_key,
+            environment=environment,
+            tags=tags,
+        )
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Unable to create payment order with Cashfree. Please try again.")
 
     new_order = Order(
         user_id=current_user.id,
         plan_id=plan.id,
         listing_id=listing_id,
-        razorpay_order_id=rzp_order["id"],
+        cashfree_order_id=cf_order["order_id"],
+        payment_session_id=cf_order["payment_session_id"],
         amount=plan.price,
         currency="INR",
         status="created",
         idempotency_key=req.idempotency_key,
-        notes=rzp_order.get("notes")
+        notes=tags
     )
     db.add(new_order)
     db.commit()
-    db.refresh(new_order)
 
     return CreateOrderResponse(
-        status="success",
-        key_id=key_id,
-        amount=amount_in_paise,
+        order_id=cf_order["order_id"],
+        payment_session_id=cf_order["payment_session_id"],
+        environment=_checkout_mode(environment),
+        amount=amount,
         currency="INR",
-        order_id=rzp_order["id"],
         plan=PlanRead.model_validate(plan),
-        prefill={
-            "name": current_user.name,
-            "email": current_user.email,
-            "contact": current_user.phone
-        }
     )
 
 
@@ -172,29 +188,13 @@ def verify_payment(
     db: Session = Depends(get_db)
 ):
     """
-    Verifies payment signature using HMAC-SHA256 and atomically credits user plan and leads.
+    Confirms the order's payment with Cashfree (server-to-server) and atomically credits
+    the user's plan and leads.
     Idempotent: Duplicate requests for the same order return success without double crediting.
     """
-    key_id, key_secret = _get_active_razorpay_credentials(db)
-
-    # 1. Verify cryptographic signature
-    is_valid = razorpay_service.verify_payment_signature(
-        razorpay_order_id=req.razorpay_order_id,
-        razorpay_payment_id=req.razorpay_payment_id,
-        razorpay_signature=req.razorpay_signature,
-        key_secret=key_secret
-    )
-
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Payment verification failed: Invalid Razorpay signature."
-        )
-
-    # 2. Lock order and execute atomic credit
     order = (
         db.query(Order)
-        .filter(Order.razorpay_order_id == req.razorpay_order_id)
+        .filter(Order.cashfree_order_id == req.order_id)
         .with_for_update()
         .first()
     )
@@ -205,8 +205,30 @@ def verify_payment(
     if order.user_id and order.user_id != current_user.id and current_user.role.lower() != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to reconcile this order.")
 
-    user = _credit_user_plan_and_leads(db, order, req.razorpay_payment_id, req.razorpay_signature)
+    if order.status != "paid":
+        app_id, secret_key, environment = _get_active_cashfree_credentials(db)
+        _require_credentials(app_id, secret_key)
+        try:
+            payment = cashfree_service.get_successful_payment(
+                order_id=order.cashfree_order_id,
+                app_id=app_id,
+                secret_key=secret_key,
+                environment=environment
+            )
+        except httpx.HTTPError:
+            raise HTTPException(status_code=502, detail="Unable to confirm payment with Cashfree. Please try again.")
 
+        if not payment:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payment verification failed: payment not completed."
+            )
+        if "payment_amount" in payment and abs(float(payment["payment_amount"]) - float(order.amount)) > 0.01:
+            raise HTTPException(status_code=400, detail="Payment verification failed: amount mismatch.")
+
+        _credit_user_plan_and_leads(db, order, str(payment.get("cf_payment_id")))
+
+    user = db.query(User).filter(User.id == order.user_id).first()
     plan_name = order.plan.name if order.plan else "Active Plan"
     if order.plan and order.plan.plan_type == "featured":
         listing = db.query(Listing).filter(Listing.id == order.listing_id).first()
@@ -232,22 +254,26 @@ def verify_payment(
 
 
 @router.post("/webhook")
-async def razorpay_webhook(
+async def cashfree_webhook(
     request: Request,
-    x_razorpay_signature: Optional[str] = Header(None),
+    x_webhook_signature: Optional[str] = Header(None),
+    x_webhook_timestamp: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
-    Razorpay Webhook endpoint. Verifies X-Razorpay-Signature against raw body,
+    Cashfree Webhook endpoint. Verifies x-webhook-signature against timestamp + raw body,
     reconciles order state, and credits user plan/leads idempotently.
     """
     raw_body = await request.body()
-    if not x_razorpay_signature:
-        raise HTTPException(status_code=400, detail="Missing X-Razorpay-Signature header.")
+    if not x_webhook_signature or not x_webhook_timestamp:
+        raise HTTPException(status_code=400, detail="Missing x-webhook-signature or x-webhook-timestamp header.")
 
-    is_valid = razorpay_service.verify_webhook_signature(
+    _, secret_key, _ = _get_active_cashfree_credentials(db)
+    is_valid = cashfree_service.verify_webhook_signature(
         raw_body=raw_body,
-        received_signature=x_razorpay_signature
+        timestamp=x_webhook_timestamp,
+        received_signature=x_webhook_signature,
+        secret_key=secret_key
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid webhook signature.")
@@ -257,79 +283,69 @@ async def razorpay_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload.")
 
-    event = data.get("event")
-    payload = data.get("payload", {})
-    payment_entity = payload.get("payment", {}).get("entity", {})
-    order_id = payment_entity.get("order_id")
-    payment_id = payment_entity.get("id")
+    payload = data.get("data", {})
+    order_id = payload.get("order", {}).get("order_id")
+    payment = payload.get("payment", {})
 
-    if event in ("payment.captured", "order.paid") and order_id:
-        order = db.query(Order).filter(Order.razorpay_order_id == order_id).with_for_update().first()
+    if data.get("type") == "PAYMENT_SUCCESS_WEBHOOK" and payment.get("payment_status") == "SUCCESS" and order_id:
+        order = db.query(Order).filter(Order.cashfree_order_id == order_id).with_for_update().first()
         if order and order.status != "paid":
-            _credit_user_plan_and_leads(db, order, payment_id=payment_id)
+            _credit_user_plan_and_leads(db, order, payment_id=str(payment.get("cf_payment_id")))
 
     return {"status": "ok"}
 
 
 @router.get("/admin/settings", response_model=dict)
-def get_razorpay_settings(
+def get_cashfree_settings(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Admin-only: Retrieve Razorpay configuration (secret is never exposed)."""
-    key_id_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_id").first()
-    key_secret_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_secret").first()
-
-    key_id = key_id_setting.value if key_id_setting and key_id_setting.value else settings.RAZORPAY_KEY_ID
-    has_secret = bool(key_secret_setting and key_secret_setting.value) or bool(settings.RAZORPAY_KEY_SECRET and not settings.RAZORPAY_KEY_SECRET.startswith("rzp_test_secret_placeholder"))
-
+    """Admin-only: Retrieve Cashfree configuration (secret is never exposed)."""
+    app_id, secret_key, environment = _get_active_cashfree_credentials(db)
     return {
         "status": "success",
         "data": {
-            "razorpay_key_id": key_id,
-            "key_id": key_id,
-            "has_secret": has_secret,
-            "test_mode": True
+            "app_id": app_id,
+            "has_secret": bool(secret_key),
+            "environment": environment
         }
     }
 
 
 @router.post("/admin/settings", response_model=dict)
-def save_razorpay_settings(
-    req: RazorpaySettingsUpdate,
+def save_cashfree_settings(
+    req: CashfreeSettingsUpdate,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Admin-only: Update Razorpay Key ID and Secret securely."""
-    active_key_id = req.razorpay_key_id or req.key_id
-    active_key_secret = req.razorpay_key_secret or req.key_secret
+    """Admin-only: Update Cashfree App ID, Secret Key, and environment."""
+    if req.environment is not None and req.environment not in ("sandbox", "production"):
+        raise HTTPException(status_code=400, detail="Environment must be 'sandbox' or 'production'.")
 
-    # Update Key ID if provided
-    if active_key_id and active_key_id.strip():
-        kid_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_id").first()
-        if not kid_setting:
-            kid_setting = SystemSetting(key="razorpay_key_id", value=active_key_id.strip(), is_encrypted=False)
-            db.add(kid_setting)
-        else:
-            kid_setting.value = active_key_id.strip()
+    updates = {}
+    if req.app_id and req.app_id.strip():
+        updates["cashfree_app_id"] = (req.app_id.strip(), False)
+    if req.secret_key and req.secret_key.strip():
+        updates["cashfree_secret_key"] = (encrypt_secret(req.secret_key.strip()), True)
+    if req.environment:
+        updates["cashfree_environment"] = (req.environment, False)
 
-    # Update Key Secret if provided
-    if active_key_secret and active_key_secret.strip():
-        ksec_setting = db.query(SystemSetting).filter(SystemSetting.key == "razorpay_key_secret").first()
-        if not ksec_setting:
-            ksec_setting = SystemSetting(key="razorpay_key_secret", value=active_key_secret.strip(), is_encrypted=True)
-            db.add(ksec_setting)
+    for key, (value, is_encrypted) in updates.items():
+        row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if row:
+            row.value = value
+            row.is_encrypted = is_encrypted
         else:
-            ksec_setting.value = active_key_secret.strip()
+            db.add(SystemSetting(key=key, value=value, is_encrypted=is_encrypted))
 
     db.commit()
+    app_id, secret_key, environment = _get_active_cashfree_credentials(db)
     return {
         "status": "success",
-        "message": "Razorpay settings updated successfully.",
+        "message": "Cashfree settings updated successfully.",
         "data": {
-            "key_id": active_key_id or "",
-            "razorpay_key_id": active_key_id or "",
-            "has_secret": bool(active_key_secret),
-            "test_mode": req.test_mode if req.test_mode is not None else True
+            "app_id": app_id,
+            "has_secret": bool(secret_key),
+            "environment": environment
         }
     }

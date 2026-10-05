@@ -1,3 +1,4 @@
+import base64
 import concurrent.futures
 import hashlib
 import hmac
@@ -105,7 +106,7 @@ def test_concurrent_lead_reveals_cannot_produce_negative_balance(client, db_sess
 def test_duplicate_payment_verification_is_strictly_idempotent(client, test_user, db_session):
     """
     IDEMPOTENCY TEST:
-    Verifying the same Razorpay payment multiple times (or concurrently)
+    Verifying the same Cashfree payment multiple times (or concurrently)
     MUST NOT double-credit leads, listing limits, or plan expiration.
     """
     plan = Plan(
@@ -132,17 +133,7 @@ def test_duplicate_payment_verification_is_strictly_idempotent(client, test_user
     assert order_res.status_code == 200
     order_id = order_res.json()["order_id"]
 
-    # Generate valid signature
-    payment_id = "pay_idempotency_123"
-    msg = f"{order_id}|{payment_id}".encode("utf-8")
-    valid_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), msg, hashlib.sha256).hexdigest()
-
-    verify_payload = {
-        "razorpay_order_id": order_id,
-        "razorpay_payment_id": payment_id,
-        "razorpay_signature": valid_sig,
-        "plan_id": plan.id
-    }
+    verify_payload = {"order_id": order_id}
 
     # First verification -> succeeds and credits leads
     res1 = client.post("/api/v1/payments/verify", json=verify_payload)
@@ -169,10 +160,17 @@ def test_duplicate_payment_verification_is_strictly_idempotent(client, test_user
     assert test_user.plan_expires_at == first_expiration, "Expiration was inappropriately pushed out on duplicate verify!"
 
 
-def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session):
+def _cashfree_webhook_headers(body: bytes, secret: str, timestamp: str = "1700000000") -> dict:
+    sig = base64.b64encode(
+        hmac.new(secret.encode("utf-8"), timestamp.encode("utf-8") + body, hashlib.sha256).digest()
+    ).decode("utf-8")
+    return {"x-webhook-signature": sig, "x-webhook-timestamp": timestamp, "Content-Type": "application/json"}
+
+
+def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session, monkeypatch):
     """
     WEBHOOK IDEMPOTENCY TEST:
-    Multiple delivery attempts of payment.captured webhook for the same order
+    Multiple delivery attempts of PAYMENT_SUCCESS_WEBHOOK for the same order
     must only credit the user once.
     """
     plan = Plan(
@@ -191,7 +189,7 @@ def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session)
     order = Order(
         user_id=test_user.id,
         plan_id=plan.id,
-        razorpay_order_id="order_webhook_test_999",
+        cashfree_order_id="order_webhook_test_999",
         amount=499.0,
         currency="INR",
         status="created"
@@ -201,12 +199,12 @@ def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session)
 
     initial_leads = test_user.leads_balance
 
+    monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", "cf_test_secret")
     webhook_body = (
-        b'{"event":"payment.captured","payload":{"payment":{"entity":{"order_id":"order_webhook_test_999","id":"pay_wh_123","status":"captured"}}}}'
+        b'{"type":"PAYMENT_SUCCESS_WEBHOOK","data":{"order":{"order_id":"order_webhook_test_999"},'
+        b'"payment":{"cf_payment_id":123456,"payment_status":"SUCCESS"}}}'
     )
-    valid_sig = hmac.new(settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"), webhook_body, hashlib.sha256).hexdigest()
-
-    headers = {"X-Razorpay-Signature": valid_sig, "Content-Type": "application/json"}
+    headers = _cashfree_webhook_headers(webhook_body, "cf_test_secret")
 
     # Delivery 1
     w1 = client.post("/api/v1/payments/webhook", content=webhook_body, headers=headers)
@@ -215,7 +213,7 @@ def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session)
     db_session.refresh(test_user)
     assert test_user.leads_balance == initial_leads + 5
 
-    # Delivery 2 (Retried by Razorpay)
+    # Delivery 2 (Retried by Cashfree)
     w2 = client.post("/api/v1/payments/webhook", content=webhook_body, headers=headers)
     assert w2.status_code == 200
 
@@ -223,13 +221,14 @@ def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session)
     assert test_user.leads_balance == initial_leads + 5, "Duplicate webhook double-credited leads!"
 
 
-def test_invalid_webhook_signature_is_rejected(client):
+def test_invalid_webhook_signature_is_rejected(client, monkeypatch):
     """
     Security check: Webhook with forged signature MUST be rejected with HTTP 400.
     """
-    body = b'{"event":"payment.captured"}'
-    fake_sig = "forged_signature_123"
-    res = client.post("/api/v1/payments/webhook", content=body, headers={"X-Razorpay-Signature": fake_sig})
+    monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", "cf_test_secret")
+    body = b'{"type":"PAYMENT_SUCCESS_WEBHOOK"}'
+    headers = {"x-webhook-signature": "forged_signature_123", "x-webhook-timestamp": "1700000000"}
+    res = client.post("/api/v1/payments/webhook", content=body, headers=headers)
     assert res.status_code == 400
     assert "Invalid webhook signature" in res.json()["detail"]
 

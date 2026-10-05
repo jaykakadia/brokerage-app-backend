@@ -327,59 +327,6 @@ def legacy_reveal_contact(
     return leads_reveal(RevealContactRequest(listing_id=listing_id), current_user=current_user, db=db)
 
 
-# --- RAZORPAY SHIMS ---
-from app.routers.payments import create_order as razorpay_create_order, verify_payment as razorpay_verify_payment, get_razorpay_settings as razorpay_get_settings, save_razorpay_settings as razorpay_save_settings
-from app.schemas.order import CreateOrderRequest, VerifyPaymentRequest, RazorpaySettingsUpdate
-
-@router.post("/create_razorpay_order.php")
-def legacy_create_razorpay_order(
-    plan_id: int = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    return razorpay_create_order(CreateOrderRequest(plan_id=plan_id), current_user=current_user, db=db)
-
-
-@router.post("/verify_razorpay_payment.php")
-def legacy_verify_razorpay_payment(
-    razorpay_order_id: str = Form(...),
-    razorpay_payment_id: str = Form(...),
-    razorpay_signature: str = Form(...),
-    plan_id: Optional[int] = Form(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    return razorpay_verify_payment(
-        VerifyPaymentRequest(
-            razorpay_order_id=razorpay_order_id,
-            razorpay_payment_id=razorpay_payment_id,
-            razorpay_signature=razorpay_signature,
-            plan_id=plan_id
-        ),
-        current_user=current_user,
-        db=db
-    )
-
-
-@router.get("/save_razorpay_settings.php")
-def legacy_get_razorpay_settings(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
-    return razorpay_get_settings(admin=admin, db=db)
-
-
-@router.post("/save_razorpay_settings.php")
-def legacy_save_razorpay_settings(
-    razorpay_key_id: str = Form(...),
-    razorpay_key_secret: Optional[str] = Form(None),
-    admin: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
-    return razorpay_save_settings(
-        RazorpaySettingsUpdate(razorpay_key_id=razorpay_key_id, razorpay_key_secret=razorpay_key_secret),
-        admin=admin,
-        db=db
-    )
-
-
 # --- EMPLOYEES & TRACKER SHIMS ---
 from app.routers.employees import list_employees, get_employee, create_or_update_employee, delete_employee, get_ref_codes
 from app.schemas.employee import EmployeeCreate

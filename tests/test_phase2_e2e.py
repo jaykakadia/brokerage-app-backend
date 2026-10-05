@@ -14,11 +14,11 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     2. Buyer logs in (initial 0 leads)
     3. Buyer toggles listing to Wishlist & verifies listing is in wishlist
     4. Buyer attempts contact reveal -> blocked with 402 (0 leads)
-    5. Buyer purchases Silver plan -> Razorpay order created & HMAC verified
+    5. Buyer purchases Silver plan -> Cashfree order created & payment confirmed
     6. Leads and limits credited atomically
     7. Buyer reveals owner contact -> 1 lead deducted, owner phone/email unlocked
     8. Buyer views same listing contact again -> idempotent, no additional lead deducted
-    9. Admin logs in -> updates Razorpay settings & creates a custom VIP plan
+    9. Admin logs in -> updates Cashfree settings & creates a custom VIP plan
     """
     # 1. Setup seller and listing
     seller_res = client.post("/api/v1/auth/register", json={
@@ -90,24 +90,14 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     assert reveal_blocked.json()["status"] == "error"
     assert reveal_blocked.json()["code"] == "no_leads"
 
-    # 5. Purchase Plan via Razorpay
+    # 5. Purchase Plan via Cashfree
     order_res = client.post("/api/v1/payments/create-order", json={"plan_id": plan.id})
     assert order_res.status_code == 200
     order_data = order_res.json()
-    assert order_data["amount"] == 99900
+    assert order_data["amount"] == 999.0
     order_id = order_data["order_id"]
 
-    # Compute valid signature
-    payment_id = "pay_phase2_e2e_9876"
-    msg = f"{order_id}|{payment_id}".encode("utf-8")
-    valid_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), msg, hashlib.sha256).hexdigest()
-
-    verify_res = client.post("/api/v1/payments/verify", json={
-        "razorpay_order_id": order_id,
-        "razorpay_payment_id": payment_id,
-        "razorpay_signature": valid_sig,
-        "plan_id": plan.id
-    })
+    verify_res = client.post("/api/v1/payments/verify", json={"order_id": order_id})
     assert verify_res.status_code == 200
     verify_data = verify_res.json()
     assert verify_data["status"] == "success"
@@ -149,16 +139,16 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     })
     assert admin_login.status_code == 200
 
-    # Save Razorpay settings dynamically
-    save_rzp = client.post("/api/v1/payments/admin/settings", json={
-        "key_id": "rzp_live_new_updated_key",
-        "key_secret": "rzp_live_new_updated_secret",
-        "test_mode": False
+    # Save Cashfree settings dynamically
+    save_cf = client.post("/api/v1/payments/admin/settings", json={
+        "app_id": "live_new_updated_app_id",
+        "secret_key": "cfsk_live_new_updated_secret",
+        "environment": "production"
     })
-    assert save_rzp.status_code == 200
-    assert save_rzp.json()["data"]["key_id"] == "rzp_live_new_updated_key"
-    assert save_rzp.json()["data"]["has_secret"] is True
-    assert save_rzp.json()["data"]["test_mode"] is False
+    assert save_cf.status_code == 200
+    assert save_cf.json()["data"]["app_id"] == "live_new_updated_app_id"
+    assert save_cf.json()["data"]["has_secret"] is True
+    assert save_cf.json()["data"]["environment"] == "production"
 
     # Create new VIP plan
     create_vip = client.post("/api/v1/plans", json={

@@ -27,7 +27,7 @@ jobs:
 
       - name: Run tests
         env:
-          RAZORPAY_MOCK: "true"
+          CASHFREE_MOCK: "true"
           SMTP_MOCK: "true"
         run: python -m pytest -q
 
