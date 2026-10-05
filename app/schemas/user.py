@@ -25,6 +25,7 @@ class UserRead(UserBase):
     facebook_url: Optional[str] = None
     website_url: Optional[str] = None
     x_url: Optional[str] = None
+    youtube_url: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -40,6 +41,7 @@ class UserProfileUpdate(BaseModel):
     facebook_url: Optional[str] = Field(None, max_length=500)
     website_url: Optional[str] = Field(None, max_length=500)
     x_url: Optional[str] = Field(None, max_length=500)
+    youtube_url: Optional[str] = Field(None, max_length=500)
 
 
 class ChangePasswordRequest(BaseModel):

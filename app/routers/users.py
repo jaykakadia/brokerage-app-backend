@@ -54,7 +54,7 @@ def update_profile(
         current_user.name = name_clean
         current_user.phone = phone_clean
 
-    for field in ("business_name", "whatsapp", "facebook_url", "website_url", "x_url"):
+    for field in ("business_name", "whatsapp", "facebook_url", "website_url", "x_url", "youtube_url"):
         if field in req.model_fields_set:
             value = (getattr(req, field) or "").strip()
             setattr(current_user, field, value or None)

@@ -29,6 +29,7 @@ class User(Base, TimestampMixin):
     facebook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     website_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     x_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    youtube_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Relationships
     listings: Mapped[List["Listing"]] = relationship("Listing", back_populates="user", cascade="all, delete-orphan")

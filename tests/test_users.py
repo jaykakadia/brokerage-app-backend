@@ -112,7 +112,8 @@ def test_business_profile_fields_save_without_otp(client, test_user):
         "whatsapp": test_user.phone,
         "facebook_url": "https://facebook.com/doerealty",
         "website_url": "https://doerealty.in",
-        "x_url": "https://x.com/doerealty"
+        "x_url": "https://x.com/doerealty",
+        "youtube_url": "https://youtube.com/@doerealty"
     })
     assert res.status_code == 200
 
@@ -120,6 +121,7 @@ def test_business_profile_fields_save_without_otp(client, test_user):
     assert data["business_name"] == "Doe Realty"
     assert data["whatsapp"] == test_user.phone
     assert data["x_url"] == "https://x.com/doerealty"
+    assert data["youtube_url"] == "https://youtube.com/@doerealty"
 
     # Blank values clear a field
     client.put("/api/v1/users/profile", json={"website_url": "  "})

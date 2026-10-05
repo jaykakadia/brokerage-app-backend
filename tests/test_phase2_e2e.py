@@ -24,7 +24,7 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     seller_res = client.post("/api/v1/auth/register", json={
         "name": "Seller Suresh",
         "email": "seller.suresh@tradecall.in",
-        "phone": "9876543210",
+        "phone": "9876543219",
         "password": "Password@123",
         "role": "Owner",
         "otp": auth_service.generate_and_store_otp("seller.suresh@tradecall.in", "register")
@@ -122,7 +122,7 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     reveal_success = client.post("/api/v1/leads/reveal", json={"listing_id": listing.id})
     assert reveal_success.status_code == 200
     rev_data = reveal_success.json()
-    assert rev_data["contact"]["mobile"] == "9876543210"
+    assert rev_data["contact"]["mobile"] == "9876543219"
     assert rev_data["plan"]["leads_remaining"] == 4
     assert rev_data["already_revealed"] is False
 
@@ -130,7 +130,7 @@ def test_complete_phase2_flow(client, test_user, admin_user, db_session):
     reveal_again = client.post("/api/v1/leads/reveal", json={"listing_id": listing.id})
     assert reveal_again.status_code == 200
     rev_again_data = reveal_again.json()
-    assert rev_again_data["contact"]["mobile"] == "9876543210"
+    assert rev_again_data["contact"]["mobile"] == "9876543219"
     assert rev_again_data["plan"]["leads_remaining"] == 4  # Unchanged!
     assert rev_again_data["already_revealed"] is True
 
