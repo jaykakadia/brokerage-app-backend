@@ -160,3 +160,33 @@ def test_listing_form_data_round_trip(client, admin_user):
     assert res.status_code == 200, res.text
     saved = client.get(f"/api/v1/listings/{res.json()['data']['id']}").json()["data"]
     assert saved["form_data"] == business_form
+
+
+def test_admin_feature_listing(client, test_user, admin_user):
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    listing_id = client.post("/api/v1/listings", data={
+        "title": "Shop for rent", "location": "Palwal", "price": 20000, "owner_name": "John Doe"
+    }).json()["data"]["id"]
+
+    # Non-admins cannot feature
+    assert client.post(f"/api/v1/listings/{listing_id}/feature", json={"days": 7}).status_code == 403
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    # Pending listings cannot be featured
+    assert client.post(f"/api/v1/listings/{listing_id}/feature", json={"days": 7}).status_code == 400
+
+    client.post(f"/api/v1/listings/{listing_id}/status", json={"action": "approve"})
+    res = client.post(f"/api/v1/listings/{listing_id}/feature", json={"days": 7})
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["is_featured"] is True
+    assert data["featured_until"] is not None
+
+    # No days → featured with no expiry
+    data = client.post(f"/api/v1/listings/{listing_id}/feature", json={}).json()["data"]
+    assert data["is_featured"] is True and data["featured_until"] is None
+
+    assert client.post(f"/api/v1/listings/{listing_id}/feature", json={"days": 0}).status_code == 422
+
+    data = client.post(f"/api/v1/listings/{listing_id}/feature", json={"featured": False}).json()["data"]
+    assert data["is_featured"] is False and data["featured_until"] is None

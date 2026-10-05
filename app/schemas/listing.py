@@ -68,6 +68,12 @@ class ListingStatusUpdate(BaseModel):
     action: str  # 'approve', 'pending', 'suspended', 'sold', 'rented', 'delete', 'stamp'
 
 
+class ListingFeatureUpdate(BaseModel):
+    featured: bool = True
+    # Days to feature from now; omit for no expiry. Ignored when un-featuring.
+    days: Optional[int] = Field(default=None, ge=1, le=3650)
+
+
 class ListingCountsResponse(BaseModel):
     status: str = "success"
     data: dict[str, int]
