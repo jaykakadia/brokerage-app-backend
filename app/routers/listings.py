@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
@@ -12,7 +12,8 @@ from app.db.models.lead import LeadReveal
 from app.db.models.user import User
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.listing import (
-    ListingRead, ListingCreate, ListingUpdate, ListingStatusUpdate, ListingCountsResponse
+    ListingRead, ListingCreate, ListingUpdate, ListingStatusUpdate, ListingCountsResponse,
+    ListingFeatureUpdate
 )
 from app.services.storage_service import storage_service
 
@@ -431,6 +432,34 @@ def update_listing_status(
 
     db.commit()
     return MessageResponse(status="success", message=f"Listing status updated via action '{action}'.")
+
+
+@router.post("/{listing_id}/feature", response_model=APIResponse[ListingRead])
+def set_listing_featured(
+    listing_id: int,
+    req: ListingFeatureUpdate,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin features a listing for a number of days (or with no expiry), or removes featuring."""
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+
+    if req.featured:
+        if listing.status != "approved":
+            raise HTTPException(status_code=400, detail="Only approved listings can be featured.")
+        listing.is_featured = True
+        listing.featured_until = (
+            datetime.now(timezone.utc) + timedelta(days=req.days) if req.days else None
+        )
+    else:
+        listing.is_featured = False
+        listing.featured_until = None
+
+    db.commit()
+    db.refresh(listing)
+    return APIResponse(status="success", data=ListingRead.model_validate(listing))
 
 
 @router.delete("/{listing_id}", response_model=MessageResponse)
