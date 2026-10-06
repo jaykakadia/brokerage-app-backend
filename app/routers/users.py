@@ -17,6 +17,17 @@ router = APIRouter(prefix="/api/v1", tags=["Users"])
 
 # --- USER PROFILE ENDPOINTS ---
 
+PROFILE_FIELDS = ("business_name", "whatsapp", "facebook_url", "website_url", "x_url", "youtube_url")
+
+
+def _apply_profile_fields(user: User, req) -> None:
+    """Copies the optional business-profile fields that were sent; blank values clear a field."""
+    for field in PROFILE_FIELDS:
+        if field in req.model_fields_set:
+            value = (getattr(req, field) or "").strip()
+            setattr(user, field, value or None)
+
+
 @router.get("/users/profile", response_model=APIResponse[UserRead])
 def get_profile(current_user: User = Depends(get_current_user)):
     return APIResponse(status="success", data=UserRead.model_validate(current_user))
@@ -54,10 +65,7 @@ def update_profile(
         current_user.name = name_clean
         current_user.phone = phone_clean
 
-    for field in ("business_name", "whatsapp", "facebook_url", "website_url", "x_url", "youtube_url"):
-        if field in req.model_fields_set:
-            value = (getattr(req, field) or "").strip()
-            setattr(current_user, field, value or None)
+    _apply_profile_fields(current_user, req)
 
     db.commit()
     db.refresh(current_user)
@@ -142,6 +150,7 @@ def create_admin_user(
         leads_balance=req.leads_balance or 0,
         plan_expires_at=req.plan_expires_at
     )
+    _apply_profile_fields(new_user, req)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -235,6 +244,7 @@ def update_admin_user(
         user.role = req.role
     if req.status is not None:
         user.status = req.status
+    _apply_profile_fields(user, req)
 
     db.commit()
     db.refresh(user)

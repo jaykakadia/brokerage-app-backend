@@ -146,13 +146,24 @@ def test_admin_create_user(client, admin_user, test_user):
         "phone": "9000000123",
         "email": "New.Agent@Example.com",
         "password": "agentpass123",
-        "role": "Agent"
+        "role": "Agent",
+        "business_name": "Agent Realty",
+        "whatsapp": "9000000123",
+        "youtube_url": "https://youtube.com/@agentrealty"
     }
     res = client.post("/api/v1/admin/users", json=payload)
     assert res.status_code == 200
     data = res.json()["data"]
     assert data["email"] == "new.agent@example.com"
     assert data["role"] == "Agent"
+    assert data["business_name"] == "Agent Realty"
+    assert data["youtube_url"] == "https://youtube.com/@agentrealty"
+
+    # Admin edit can update and clear profile fields
+    updated = client.put(f"/api/v1/admin/users/{data['id']}", json={"website_url": "https://agentrealty.in", "youtube_url": ""})
+    assert updated.status_code == 200
+    assert updated.json()["data"]["website_url"] == "https://agentrealty.in"
+    assert updated.json()["data"]["youtube_url"] is None
 
     # Duplicate email must not overwrite the existing account
     dup_email = client.post("/api/v1/admin/users", json={**payload, "phone": "9000000124", "password": "overwrite999"})
