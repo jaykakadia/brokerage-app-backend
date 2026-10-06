@@ -1,10 +1,19 @@
-from typing import Optional, Literal
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated, Optional, Literal
+from pydantic import BaseModel, BeforeValidator, EmailStr, Field
 from app.schemas.user import UserRead
 
 
+def _resolve_admin_login_alias(value: object) -> object:
+    if isinstance(value, str) and value.strip().lower() == "adminpanel":
+        return "admin@tradecall.in"
+    return value
+
+
+LoginEmail = Annotated[EmailStr, BeforeValidator(_resolve_admin_login_alias)]
+
+
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: LoginEmail
     password: str
     remember_me: bool = False
 
