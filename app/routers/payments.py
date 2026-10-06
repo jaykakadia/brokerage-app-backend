@@ -9,6 +9,7 @@ from app.core.dependencies import get_current_user, get_current_admin, get_db
 from app.db.models.user import User
 from app.db.models.plan import Plan
 from app.db.models.order import Order
+from app.db.models.listing import Listing
 from app.db.models.setting import SystemSetting
 from app.schemas.order import (
     CreateOrderRequest, CreateOrderResponse,
@@ -31,6 +32,15 @@ def _get_active_razorpay_credentials(db: Session) -> tuple[str, str]:
     return key_id, key_secret
 
 
+def _extend_from(current: Optional[datetime], days: int) -> datetime:
+    """Adds days to an expiry that is still in the future, otherwise to now."""
+    now = datetime.now(timezone.utc)
+    if current is not None and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    start_date = current if (current and current > now) else now
+    return start_date + timedelta(days=days)
+
+
 def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[str] = None, signature: Optional[str] = None) -> User:
     """
     Atomically marks order as paid and credits user plan, leads balance, and validity.
@@ -46,18 +56,18 @@ def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[
         order.razorpay_signature = signature
 
     user = db.query(User).filter(User.id == order.user_id).with_for_update().first()
-    if user and order.plan:
+    if user and order.plan and order.plan.plan_type == "featured":
+        listing = db.query(Listing).filter(Listing.id == order.listing_id).with_for_update().first()
+        if listing:
+            # Buying again while still featured extends the current period.
+            listing.is_featured = True
+            listing.featured_until = _extend_from(listing.featured_until, order.plan.duration_days)
+    elif user and order.plan:
         plan = order.plan
         user.plan_id = plan.id
         user.leads_balance += plan.leads_count
         user.listing_limit += plan.listing_limit
-
-        now = datetime.now(timezone.utc)
-        current_exp = user.plan_expires_at
-        if current_exp is not None and current_exp.tzinfo is None:
-            current_exp = current_exp.replace(tzinfo=timezone.utc)
-        start_date = current_exp if (current_exp and current_exp > now) else now
-        user.plan_expires_at = start_date + timedelta(days=plan.duration_days)
+        user.plan_expires_at = _extend_from(user.plan_expires_at, plan.duration_days)
 
     db.commit()
     if user:
@@ -78,6 +88,15 @@ def create_order(
     plan = db.query(Plan).filter(Plan.id == req.plan_id, Plan.status == "active").first()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found or inactive.")
+
+    listing_id = None
+    if plan.plan_type == "featured":
+        listing = db.query(Listing).filter(Listing.id == req.listing_id).first() if req.listing_id else None
+        if not listing or listing.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Choose one of your listings to feature.")
+        if listing.status != "approved":
+            raise HTTPException(status_code=400, detail="Only approved listings can be featured.")
+        listing_id = listing.id
 
     key_id, key_secret = _get_active_razorpay_credentials(db)
     amount_in_paise = int(round(float(plan.price) * 100))
@@ -107,7 +126,11 @@ def create_order(
         amount_in_paise=amount_in_paise,
         currency="INR",
         receipt=f"rcpt_u{current_user.id}_p{plan.id}",
-        notes={"user_id": str(current_user.id), "plan_id": str(plan.id)},
+        notes={
+            "user_id": str(current_user.id),
+            "plan_id": str(plan.id),
+            **({"listing_id": str(listing_id)} if listing_id else {})
+        },
         key_id=key_id,
         key_secret=key_secret
     )
@@ -115,6 +138,7 @@ def create_order(
     new_order = Order(
         user_id=current_user.id,
         plan_id=plan.id,
+        listing_id=listing_id,
         razorpay_order_id=rzp_order["id"],
         amount=plan.price,
         currency="INR",
@@ -184,6 +208,17 @@ def verify_payment(
     user = _credit_user_plan_and_leads(db, order, req.razorpay_payment_id, req.razorpay_signature)
 
     plan_name = order.plan.name if order.plan else "Active Plan"
+    if order.plan and order.plan.plan_type == "featured":
+        listing = db.query(Listing).filter(Listing.id == order.listing_id).first()
+        return VerifyPaymentResponse(
+            status="success",
+            message="Payment verified. Your listing is now featured!",
+            plan={
+                "plan_name": plan_name,
+                "listing_id": order.listing_id,
+                "featured_until": listing.featured_until.isoformat() if (listing and listing.featured_until) else None
+            }
+        )
     return VerifyPaymentResponse(
         status="success",
         message="Payment verified and plan activated successfully!",

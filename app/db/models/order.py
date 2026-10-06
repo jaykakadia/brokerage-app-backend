@@ -15,6 +15,10 @@ class Order(Base):
     plan_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Listing being featured, for "featured" plan orders
+    listing_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("listings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     razorpay_order_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     razorpay_payment_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
     razorpay_signature: Mapped[str | None] = mapped_column(String(255), nullable=True)

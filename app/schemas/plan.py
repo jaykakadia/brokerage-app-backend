@@ -1,10 +1,14 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
+
+
+PlanType = Literal["leads", "featured"]
 
 
 class PlanBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    plan_type: PlanType = "leads"
     description: Optional[str] = None
     price: float = Field(..., ge=0)
     listing_limit: int = Field(default=5, ge=0)
@@ -20,6 +24,7 @@ class PlanCreate(PlanBase):
 
 class PlanUpdate(BaseModel):
     name: Optional[str] = None
+    plan_type: Optional[PlanType] = None
     description: Optional[str] = None
     price: Optional[float] = None
     listing_limit: Optional[int] = None

@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/v1/plans", tags=["Plans"])
 @router.get("", response_model=dict)
 def get_plans(
     all: Optional[bool] = Query(False),
+    type: str = Query("leads", pattern="^(leads|featured)$"),
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
@@ -22,7 +23,7 @@ def get_plans(
     Public users see only active plans ordered by sort_order and price.
     Admins can request all plans (including inactive).
     """
-    query = db.query(Plan)
+    query = db.query(Plan).filter(Plan.plan_type == type)
     is_admin = user and user.role.lower() == "admin"
 
     if not is_admin or not all:
@@ -52,6 +53,7 @@ def create_or_save_plan(
     """Admin-only: Create a new plan."""
     plan = Plan(
         name=plan_in.name.strip(),
+        plan_type=plan_in.plan_type,
         description=plan_in.description,
         price=plan_in.price,
         listing_limit=plan_in.listing_limit,

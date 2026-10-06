@@ -131,3 +131,62 @@ def test_payment_and_razorpay_flow(client, test_user, active_plan, admin_user):
     })
     assert save_res.status_code == 200
     assert save_res.json()["status"] == "success"
+
+
+def test_featured_plan_features_one_listing(client, db_session, test_user, admin_user):
+    from datetime import datetime, timedelta, timezone
+    from app.db.models.listing import Listing
+
+    featured_plan = Plan(name="Featured 7 Days", plan_type="featured", price=299.0,
+                         listing_limit=0, leads_count=0, duration_days=7, status="active")
+    leads_plan = Plan(name="Leads Basic", price=499.0, listing_limit=5, leads_count=5, duration_days=30, status="active")
+    mine = Listing(user_id=test_user.id, title="My Plot", location="Palwal", owner_name="John", status="approved")
+    pending = Listing(user_id=test_user.id, title="Pending Plot", location="Palwal", owner_name="John", status="pending")
+    others = Listing(user_id=admin_user.id, title="Admin Plot", location="Palwal", owner_name="Admin", status="approved")
+    db_session.add_all([featured_plan, leads_plan, mine, pending, others])
+    db_session.commit()
+
+    # Plans are listed by type; the default stays "leads" for existing callers
+    names = [p["name"] for p in client.get("/api/v1/plans").json()["data"]]
+    assert names == ["Leads Basic"]
+    featured_names = [p["name"] for p in client.get("/api/v1/plans", params={"type": "featured"}).json()["data"]]
+    assert featured_names == ["Featured 7 Days"]
+
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    initial_leads = test_user.leads_balance
+
+    # A featured plan needs one of the user's own approved listings
+    for bad in ({}, {"listing_id": others.id}, {"listing_id": pending.id}):
+        res = client.post("/api/v1/payments/create-order", json={"plan_id": featured_plan.id, **bad})
+        assert res.status_code == 400
+
+    order_id = client.post("/api/v1/payments/create-order",
+                           json={"plan_id": featured_plan.id, "listing_id": mine.id}).json()["order_id"]
+    payment_id = "pay_featured1"
+    signature = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"),
+                         f"{order_id}|{payment_id}".encode("utf-8"), hashlib.sha256).hexdigest()
+    verify = client.post("/api/v1/payments/verify", json={
+        "razorpay_order_id": order_id, "razorpay_payment_id": payment_id, "razorpay_signature": signature
+    })
+    assert verify.status_code == 200
+    assert verify.json()["plan"]["listing_id"] == mine.id
+
+    listing = client.get(f"/api/v1/listings/{mine.id}").json()["data"]
+    assert listing["is_featured"] is True
+    featured_until = datetime.fromisoformat(listing["featured_until"])
+    if featured_until.tzinfo is None:
+        featured_until = featured_until.replace(tzinfo=timezone.utc)
+    assert timedelta(days=6) < featured_until - datetime.now(timezone.utc) <= timedelta(days=7)
+
+    # Featuring does not touch the user's leads plan
+    profile = client.get("/api/v1/users/profile").json()["data"]
+    assert profile["leads_balance"] == initial_leads
+    assert profile["plan_id"] is None
+
+    # Once the period ends the listing is no longer featured
+    db_session.query(Listing).filter(Listing.id == mine.id).update(
+        {Listing.featured_until: datetime.now(timezone.utc) - timedelta(minutes=1)})
+    db_session.commit()
+    expired = client.get(f"/api/v1/listings/{mine.id}").json()["data"]
+    assert expired["is_featured"] is False
+    assert expired["featured_until"] is None

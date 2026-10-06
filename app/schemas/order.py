@@ -6,6 +6,7 @@ from app.schemas.plan import PlanRead
 
 class CreateOrderRequest(BaseModel):
     plan_id: int
+    listing_id: Optional[int] = None  # required for "featured" plans
     idempotency_key: Optional[str] = None
 
 

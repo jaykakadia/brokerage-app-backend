@@ -24,6 +24,8 @@ class Listing(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
     verified: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Set when featuring was bought; NULL with is_featured means featured by admin with no expiry.
+    featured_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     form_data: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
     # Relationships

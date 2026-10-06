@@ -18,6 +18,17 @@ from app.services.storage_service import storage_service
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
 
+def _expire_featured(db: Session) -> None:
+    """Un-features listings whose paid featured period has ended."""
+    expired = db.query(Listing).filter(
+        Listing.is_featured == True,
+        Listing.featured_until.isnot(None),
+        Listing.featured_until <= datetime.now(timezone.utc)
+    ).update({Listing.is_featured: False, Listing.featured_until: None}, synchronize_session=False)
+    if expired:
+        db.commit()
+
+
 @router.get("/counts", response_model=ListingCountsResponse)
 def get_listing_counts(
     admin: User = Depends(get_current_admin),
@@ -41,6 +52,7 @@ def get_listing_counts(
 @router.get("/stats")
 def get_public_stats(db: Session = Depends(get_db)):
     """Public endpoint — returns site-wide stats for the login page hero."""
+    _expire_featured(db)
     active = db.query(func.count(Listing.id)).filter(Listing.status == "approved").scalar() or 0
     featured = db.query(func.count(Listing.id)).filter(
         Listing.status == "approved", Listing.is_featured == True
@@ -68,6 +80,7 @@ def get_listings(
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
+    _expire_featured(db)
     query = db.query(Listing)
 
     # Filter by user_id if requested (e.g. My Listings in Account)
@@ -119,6 +132,7 @@ def get_listings(
 
 @router.get("/{listing_id}", response_model=APIResponse[ListingRead])
 def get_listing(listing_id: str, db: Session = Depends(get_db)):
+    _expire_featured(db)
     clean_id = listing_id.strip()
     numeric_part = clean_id
     if clean_id.upper().startswith("TC011P-"):

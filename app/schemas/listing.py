@@ -51,6 +51,7 @@ class ListingRead(ListingBase):
     status: str
     verified: int
     is_featured: bool = False
+    featured_until: Optional[datetime] = None
     created_at: datetime
     images: List[ListingImageRead] = []
 

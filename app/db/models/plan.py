@@ -9,6 +9,8 @@ class Plan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # "leads" plans credit leads/listing limit; "featured" plans feature one listing for duration_days.
+    plan_type: Mapped[str] = mapped_column(String(20), default="leads", server_default="leads", nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     listing_limit: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
