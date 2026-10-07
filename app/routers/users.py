@@ -11,6 +11,7 @@ from app.schemas.user import (
     AdminUserCreate, AdminUserUpdate, RoleUpdateRequest
 )
 from app.services.auth_service import auth_service
+from app.services.listing_assignment import claim_assigned_listings
 
 router = APIRouter(prefix="/api/v1", tags=["Users"])
 
@@ -152,6 +153,8 @@ def create_admin_user(
     )
     _apply_profile_fields(new_user, req)
     db.add(new_user)
+    db.flush()
+    claim_assigned_listings(db, new_user)
     db.commit()
     db.refresh(new_user)
     return APIResponse(status="success", data=UserRead.model_validate(new_user))

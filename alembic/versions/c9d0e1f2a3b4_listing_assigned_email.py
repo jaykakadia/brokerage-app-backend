@@ -1,0 +1,29 @@
+"""listing_assigned_email
+
+Revision ID: c9d0e1f2a3b4
+Revises: b8c9d0e1f2a3
+Create Date: 2026-10-07 12:00:00.000000
+
+"""
+from typing import Sequence, Union
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision: str = 'c9d0e1f2a3b4'
+down_revision: Union[str, Sequence[str], None] = 'b8c9d0e1f2a3'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    with op.batch_alter_table('listings') as batch_op:
+        batch_op.add_column(sa.Column('assigned_email', sa.String(length=255), nullable=True))
+        batch_op.create_index('ix_listings_assigned_email', ['assigned_email'])
+
+
+def downgrade() -> None:
+    with op.batch_alter_table('listings') as batch_op:
+        batch_op.drop_index('ix_listings_assigned_email')
+        batch_op.drop_column('assigned_email')

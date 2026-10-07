@@ -16,6 +16,7 @@ from app.schemas.listing import (
     ListingFeatureUpdate
 )
 from app.services.storage_service import storage_service
+from app.services.listing_assignment import assign_listing_to_email
 
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
@@ -30,6 +31,8 @@ def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool =
     can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
     if not can_see and isinstance(data.get("form_data"), dict):
         data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
+    if not (user is not None and user.role.lower() == "admin"):
+        data["assigned_email"] = None
     return data
 
 
@@ -197,10 +200,14 @@ async def create_listing(
     owner_role: str = Form("Owner"),
     reference_code: Optional[str] = Form(None),
     form_data: Optional[str] = Form(None),
+    assign_to_email: Optional[str] = Form(None),  # admin only: the user this listing belongs to
     photos: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if assign_to_email and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign a listing to another user.")
+
     # Rule 1: Validate title words length (<= 50 words)
     words = title.strip().split()
     if len(words) > 50:
@@ -290,6 +297,8 @@ async def create_listing(
         verified=0,
         form_data=parsed_form_data
     )
+    if assign_to_email:
+        assign_listing_to_email(db, listing, assign_to_email)
     db.add(listing)
     db.commit()
     db.refresh(listing)
@@ -312,7 +321,7 @@ async def create_listing(
 
     db.commit()
     db.refresh(listing)
-    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user))
 
 
 @router.patch("/{listing_id}", response_model=APIResponse[ListingRead])
@@ -328,6 +337,7 @@ async def update_listing(
     reference_code: Optional[str] = Form(None),
     form_data: Optional[str] = Form(None),
     remove_image_ids: Optional[str] = Form(None),  # comma-separated ListingImage ids to delete
+    assign_to_email: Optional[str] = Form(None),  # admin only: move the listing to this user
     photos: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -339,7 +349,11 @@ async def update_listing(
     # Authorization: Owner or Admin
     if listing.user_id != current_user.id and current_user.role.lower() != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to edit this listing.")
+    if assign_to_email and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can assign a listing to another user.")
 
+    if assign_to_email:
+        assign_listing_to_email(db, listing, assign_to_email)
     if title is not None:
         words = title.strip().split()
         if len(words) > 50:
@@ -398,7 +412,7 @@ async def update_listing(
     for path in removed_files:
         storage_service.delete_file(path)
     db.refresh(listing)
-    return APIResponse(status="success", data=ListingRead.model_validate(listing))
+    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user))
 
 
 @router.post("/{listing_id}/status", response_model=MessageResponse)
