@@ -77,3 +77,15 @@ def test_plans_flow_and_rbac(client, test_user, admin_user):
     # Verify deleted
     get_res = client.get(f"/api/v1/plans/{plan_id}")
     assert get_res.status_code == 404
+
+
+def test_plans_listed_low_to_high_price(client, admin_user):
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    for name, price, order in [("Pro", 2499.0, 0), ("Basic", 499.0, 5), ("Plus", 999.0, 1)]:
+        res = client.post("/api/v1/plans", json={
+            "name": name, "price": price, "listing_limit": 1, "status": "active", "sort_order": order
+        })
+        assert res.status_code == 200
+    client.cookies.clear()
+    names = [p["name"] for p in client.get("/api/v1/plans").json()["data"]]
+    assert names == ["Basic", "Plus", "Pro"]

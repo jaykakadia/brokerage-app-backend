@@ -20,7 +20,7 @@ def get_plans(
 ):
     """
     Returns plans.
-    Public users see only active plans ordered by sort_order and price.
+    Public users see only active plans, cheapest first.
     Admins can request all plans (including inactive).
     """
     query = db.query(Plan).filter(Plan.plan_type == type)
@@ -29,7 +29,7 @@ def get_plans(
     if not is_admin or not all:
         query = query.filter(Plan.status == "active")
 
-    plans = query.order_by(Plan.sort_order.asc(), Plan.price.asc()).all()
+    plans = query.order_by(Plan.price.asc(), Plan.sort_order.asc(), Plan.id.asc()).all()
     return {
         "status": "success",
         "data": [PlanRead.model_validate(p).model_dump() for p in plans]
