@@ -298,7 +298,7 @@ async def create_listing(
         form_data=parsed_form_data
     )
     if assign_to_email:
-        assign_listing_to_email(db, listing, assign_to_email)
+        assign_listing_to_email(db, listing, assign_to_email, current_user)
     db.add(listing)
     db.commit()
     db.refresh(listing)
@@ -353,7 +353,7 @@ async def update_listing(
         raise HTTPException(status_code=403, detail="Only admins can assign a listing to another user.")
 
     if assign_to_email:
-        assign_listing_to_email(db, listing, assign_to_email)
+        assign_listing_to_email(db, listing, assign_to_email, current_user)
     if title is not None:
         words = title.strip().split()
         if len(words) > 50:
