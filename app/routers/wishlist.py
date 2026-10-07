@@ -43,7 +43,10 @@ def get_wishlist(
     data = []
     for w in records:
         if w.listing and w.listing.status != "deleted":
-            data.append(ListingRead.model_validate(w.listing).model_dump())
+            item = ListingRead.model_validate(w.listing).model_dump()
+            if current_user.role.lower() != "admin":
+                item["assigned_email"] = None
+            data.append(item)
 
     return {"status": "success", "data": data}
 

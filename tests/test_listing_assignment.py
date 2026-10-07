@@ -65,3 +65,33 @@ def test_non_admin_cannot_assign(client, test_user):
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
     res = client.post("/api/v1/listings", data=_listing_data(assign_to_email="other@example.com"))
     assert res.status_code == 403
+
+
+def test_reassign_to_new_email_removes_old_owner_access(client, admin_user, test_user):
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    listing = client.post("/api/v1/listings", data=_listing_data()).json()["data"]
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    res = client.patch(f"/api/v1/listings/{listing['id']}", data={"assign_to_email": "someone@example.com"})
+    assert res.json()["data"]["user_id"] == admin_user.id
+
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    assert client.patch(f"/api/v1/listings/{listing['id']}", data={"title": "Hijacked"}).status_code == 403
+    assert client.delete(f"/api/v1/listings/{listing['id']}").status_code == 403
+
+
+def test_assign_rejects_incomplete_email(client, admin_user):
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    res = client.post("/api/v1/listings", data=_listing_data(assign_to_email="john@"))
+    assert res.status_code == 400
+
+
+def test_wishlist_hides_assigned_email(client, admin_user, test_user):
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    listing = client.post("/api/v1/listings", data=_listing_data(assign_to_email="held@example.com")).json()["data"]
+
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    client.post("/api/v1/wishlist/toggle", json={"listing_id": listing["id"]})
+    items = client.get("/api/v1/wishlist").json()["data"]
+    assert [l["id"] for l in items] == [listing["id"]]
+    assert items[0]["assigned_email"] is None
