@@ -1,6 +1,8 @@
 import base64
 import hmac
 import hashlib
+import re
+import time
 import uuid
 from typing import Dict, Any, List, Optional
 import httpx
@@ -10,6 +12,22 @@ BASE_URLS = {
     "sandbox": "https://sandbox.cashfree.com/pg",
     "production": "https://api.cashfree.com/pg",
 }
+
+# Webhooks older than this are rejected as possible replays
+WEBHOOK_MAX_AGE_SECONDS = 5 * 60
+
+
+def normalize_indian_phone(phone: Optional[str]) -> Optional[str]:
+    """
+    Reduces a stored phone number ("+91 98765-43210", "098765 43210") to the 10-digit
+    mobile number Cashfree accepts. Returns None if it is not a valid Indian mobile number.
+    """
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    return digits if re.fullmatch(r"[6-9]\d{9}", digits) else None
 
 
 class CashfreeService:
@@ -60,6 +78,8 @@ class CashfreeService:
             "customer_details": customer,
             "order_tags": tags or {},
         }
+        if settings.CASHFREE_NOTIFY_URL:
+            payload["order_meta"] = {"notify_url": settings.CASHFREE_NOTIFY_URL}
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(
                 f"{self._base_url(environment)}/orders",
@@ -103,8 +123,11 @@ class CashfreeService:
     ) -> bool:
         """
         Verifies a Cashfree webhook: base64(HMAC-SHA256(timestamp + raw_body, secret_key)).
+        The timestamp must also be recent, so a captured webhook cannot be replayed later.
         """
         if not secret_key or not received_signature or not timestamp or not raw_body:
+            return False
+        if not self.is_fresh_timestamp(timestamp):
             return False
 
         message = timestamp.encode("utf-8") + raw_body
@@ -113,6 +136,16 @@ class CashfreeService:
         ).decode("utf-8")
 
         return hmac.compare_digest(expected_signature, received_signature)
+
+    def is_fresh_timestamp(self, timestamp: str) -> bool:
+        """Cashfree sends epoch milliseconds; seconds are accepted too."""
+        try:
+            sent_at = int(timestamp)
+        except ValueError:
+            return False
+        if sent_at > 10**11:
+            sent_at //= 1000
+        return abs(time.time() - sent_at) <= WEBHOOK_MAX_AGE_SECONDS
 
 
 cashfree_service = CashfreeService()

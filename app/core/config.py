@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     CASHFREE_ENVIRONMENT: str = "sandbox"  # sandbox | production
     CASHFREE_API_VERSION: str = "2025-01-01"
     CASHFREE_MOCK: bool = False  # true only for local dev/tests: orders are treated as paid
+    # Optional https webhook URL sent with each order; leave empty to use the one set in the Cashfree dashboard
+    CASHFREE_NOTIFY_URL: str = ""
 
     # SMTP Mail Service
     SMTP_HOST: str = "smtp.gmail.com"

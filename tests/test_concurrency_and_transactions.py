@@ -3,6 +3,7 @@ import concurrent.futures
 import hashlib
 import hmac
 import pytest
+import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -160,7 +161,8 @@ def test_duplicate_payment_verification_is_strictly_idempotent(client, test_user
     assert test_user.plan_expires_at == first_expiration, "Expiration was inappropriately pushed out on duplicate verify!"
 
 
-def _cashfree_webhook_headers(body: bytes, secret: str, timestamp: str = "1700000000") -> dict:
+def _cashfree_webhook_headers(body: bytes, secret: str, timestamp: str = None) -> dict:
+    timestamp = timestamp or str(int(time.time() * 1000))
     sig = base64.b64encode(
         hmac.new(secret.encode("utf-8"), timestamp.encode("utf-8") + body, hashlib.sha256).digest()
     ).decode("utf-8")
@@ -202,7 +204,8 @@ def test_duplicate_webhook_is_strictly_idempotent(client, test_user, db_session,
     monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", "cf_test_secret")
     webhook_body = (
         b'{"type":"PAYMENT_SUCCESS_WEBHOOK","data":{"order":{"order_id":"order_webhook_test_999"},'
-        b'"payment":{"cf_payment_id":123456,"payment_status":"SUCCESS"}}}'
+        b'"payment":{"cf_payment_id":123456,"payment_status":"SUCCESS",'
+        b'"payment_amount":499.0,"payment_currency":"INR"}}}'
     )
     headers = _cashfree_webhook_headers(webhook_body, "cf_test_secret")
 
@@ -227,7 +230,7 @@ def test_invalid_webhook_signature_is_rejected(client, monkeypatch):
     """
     monkeypatch.setattr(settings, "CASHFREE_SECRET_KEY", "cf_test_secret")
     body = b'{"type":"PAYMENT_SUCCESS_WEBHOOK"}'
-    headers = {"x-webhook-signature": "forged_signature_123", "x-webhook-timestamp": "1700000000"}
+    headers = {"x-webhook-signature": "forged_signature_123", "x-webhook-timestamp": str(int(time.time() * 1000))}
     res = client.post("/api/v1/payments/webhook", content=body, headers=headers)
     assert res.status_code == 400
     assert "Invalid webhook signature" in res.json()["detail"]

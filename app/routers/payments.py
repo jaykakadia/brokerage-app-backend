@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -20,9 +21,10 @@ from app.schemas.order import (
     CashfreeSettingsUpdate
 )
 from app.schemas.plan import PlanRead
-from app.services.cashfree_service import cashfree_service
+from app.services.cashfree_service import cashfree_service, normalize_indian_phone
 
 router = APIRouter(prefix="/api/v1/payments", tags=["Payments"])
+logger = logging.getLogger(__name__)
 
 
 def _get_setting(db: Session, key: str) -> Optional[str]:
@@ -46,6 +48,12 @@ def _checkout_mode(environment: str) -> str:
 def _require_credentials(app_id: str, secret_key: str) -> None:
     if not cashfree_service.is_mock() and not (app_id and secret_key):
         raise HTTPException(status_code=503, detail="Online payments are not configured yet. Please try again later.")
+
+
+def _cashfree_error_detail(exc: httpx.HTTPError) -> str:
+    """Cashfree's response body says why a call failed (bad phone, wrong keys, wrong environment)."""
+    response = getattr(exc, "response", None)
+    return f"{response.status_code} {response.text[:500]}" if response is not None else repr(exc)
 
 
 def _extend_from(current: Optional[datetime], days: int) -> datetime:
@@ -76,6 +84,14 @@ def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[
             # Buying again while still featured extends the current period.
             listing.is_featured = True
             listing.featured_until = _extend_from(listing.featured_until, order.plan.duration_days)
+        else:
+            # The money was taken but there is nothing to feature: flag it for a refund.
+            order.notes = {**(order.notes or {}), "needs_refund": "featured listing no longer exists"}
+            logger.error("Order %s paid but listing %s no longer exists; needs refund",
+                         order.cashfree_order_id, order.listing_id)
+    elif not user or not order.plan:
+        order.notes = {**(order.notes or {}), "needs_refund": "user or plan no longer exists"}
+        logger.error("Order %s paid but its user or plan no longer exists; needs refund", order.cashfree_order_id)
     elif user and order.plan:
         plan = order.plan
         user.plan_id = plan.id
@@ -117,13 +133,21 @@ def create_order(
     _require_credentials(app_id, secret_key)
     amount = round(float(plan.price), 2)
 
-    # Idempotency check if idempotency_key is provided
+    # The same idempotency key returns the same pending order; any other reuse is a conflict.
     if req.idempotency_key:
-        existing_order = db.query(Order).filter(
-            Order.idempotency_key == req.idempotency_key,
-            Order.user_id == current_user.id
-        ).first()
-        if existing_order and existing_order.status == "created" and existing_order.payment_session_id:
+        existing_order = db.query(Order).filter(Order.idempotency_key == req.idempotency_key).first()
+        if existing_order:
+            if (
+                existing_order.user_id != current_user.id
+                or existing_order.plan_id != plan.id
+                or existing_order.listing_id != listing_id
+                or existing_order.status != "created"
+                or not existing_order.payment_session_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This checkout was already used. Please refresh and try again."
+                )
             return CreateOrderResponse(
                 order_id=existing_order.cashfree_order_id,
                 payment_session_id=existing_order.payment_session_id,
@@ -132,6 +156,13 @@ def create_order(
                 currency=existing_order.currency,
                 plan=PlanRead.model_validate(plan),
             )
+
+    customer_phone = normalize_indian_phone(current_user.phone)
+    if not customer_phone:
+        raise HTTPException(
+            status_code=400,
+            detail="Please update your profile with a valid 10-digit mobile number before paying."
+        )
 
     tags = {
         "user_id": str(current_user.id),
@@ -146,14 +177,15 @@ def create_order(
                 "customer_id": f"user_{current_user.id}",
                 "customer_name": current_user.name,
                 "customer_email": current_user.email,
-                "customer_phone": current_user.phone,
+                "customer_phone": customer_phone,
             },
             app_id=app_id,
             secret_key=secret_key,
             environment=environment,
             tags=tags,
         )
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        logger.error("Cashfree create order failed for user %s: %s", current_user.id, _cashfree_error_detail(exc))
         raise HTTPException(status_code=502, detail="Unable to create payment order with Cashfree. Please try again.")
 
     new_order = Order(
@@ -181,6 +213,18 @@ def create_order(
     )
 
 
+def _payment_matches_order(payment: dict, order: Order) -> bool:
+    """Fails closed: a payment without an amount, or in another currency, never matches."""
+    try:
+        paid_amount = float(payment["payment_amount"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    currency = payment.get("payment_currency")
+    if currency and currency != order.currency:
+        return False
+    return abs(paid_amount - float(order.amount)) <= 0.01
+
+
 @router.post("/verify", response_model=VerifyPaymentResponse)
 def verify_payment(
     req: VerifyPaymentRequest,
@@ -192,12 +236,7 @@ def verify_payment(
     the user's plan and leads.
     Idempotent: Duplicate requests for the same order return success without double crediting.
     """
-    order = (
-        db.query(Order)
-        .filter(Order.cashfree_order_id == req.order_id)
-        .with_for_update()
-        .first()
-    )
+    order = db.query(Order).filter(Order.cashfree_order_id == req.order_id).first()
 
     if not order:
         raise HTTPException(status_code=404, detail="Order not found for this payment.")
@@ -206,6 +245,7 @@ def verify_payment(
         raise HTTPException(status_code=403, detail="Not authorized to reconcile this order.")
 
     if order.status != "paid":
+        # Ask Cashfree first, without holding a row lock for the length of the HTTP call.
         app_id, secret_key, environment = _get_active_cashfree_credentials(db)
         _require_credentials(app_id, secret_key)
         try:
@@ -215,7 +255,9 @@ def verify_payment(
                 secret_key=secret_key,
                 environment=environment
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.error("Cashfree payment lookup failed for order %s: %s",
+                         order.cashfree_order_id, _cashfree_error_detail(exc))
             raise HTTPException(status_code=502, detail="Unable to confirm payment with Cashfree. Please try again.")
 
         if not payment:
@@ -223,9 +265,15 @@ def verify_payment(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Payment verification failed: payment not completed."
             )
-        if "payment_amount" in payment and abs(float(payment["payment_amount"]) - float(order.amount)) > 0.01:
+        if cashfree_service.is_mock():
+            payment.setdefault("payment_amount", float(order.amount))
+        if not _payment_matches_order(payment, order):
+            logger.error("Cashfree payment for order %s does not match it: amount=%s currency=%s",
+                         order.cashfree_order_id, payment.get("payment_amount"), payment.get("payment_currency"))
             raise HTTPException(status_code=400, detail="Payment verification failed: amount mismatch.")
 
+        # Now lock the order; a webhook may have credited it in the meantime, which the credit step handles.
+        order = db.query(Order).filter(Order.id == order.id).with_for_update().populate_existing().first()
         _credit_user_plan_and_leads(db, order, str(payment.get("cf_payment_id")))
 
     user = db.query(User).filter(User.id == order.user_id).first()
@@ -287,10 +335,25 @@ async def cashfree_webhook(
     order_id = payload.get("order", {}).get("order_id")
     payment = payload.get("payment", {})
 
-    if data.get("type") == "PAYMENT_SUCCESS_WEBHOOK" and payment.get("payment_status") == "SUCCESS" and order_id:
+    event_type = data.get("type")
+    if not order_id:
+        return {"status": "ok"}
+
+    if event_type == "PAYMENT_SUCCESS_WEBHOOK" and payment.get("payment_status") == "SUCCESS":
         order = db.query(Order).filter(Order.cashfree_order_id == order_id).with_for_update().first()
         if order and order.status != "paid":
+            if not _payment_matches_order(payment, order):
+                logger.error("Webhook payment for order %s does not match it: amount=%s currency=%s",
+                             order_id, payment.get("payment_amount"), payment.get("payment_currency"))
+                return {"status": "ok"}
             _credit_user_plan_and_leads(db, order, payment_id=str(payment.get("cf_payment_id")))
+
+    elif event_type in ("PAYMENT_FAILED_WEBHOOK", "PAYMENT_USER_DROPPED_WEBHOOK"):
+        # The customer can still retry on the same order; a later success moves it to "paid".
+        order = db.query(Order).filter(Order.cashfree_order_id == order_id).with_for_update().first()
+        if order and order.status == "created":
+            order.status = "failed"
+            db.commit()
 
     return {"status": "ok"}
 
