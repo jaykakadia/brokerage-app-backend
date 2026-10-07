@@ -126,6 +126,13 @@ def test_listing_form_data_round_trip(client, admin_user):
     assert after_edit["title"] == "Edited title"
     assert after_edit["form_data"] == property_form
 
+    # The full edit form sends form_data back, which replaces the saved wizard data
+    edited_form = {**property_form, "bhk": "4BHK", "amenities": ["Lift"]}
+    res = client.patch(f"/api/v1/listings/{listing_id}", data={"form_data": json.dumps(edited_form)})
+    assert res.status_code == 200
+    assert res.json()["data"]["form_data"] == edited_form
+    assert client.patch(f"/api/v1/listings/{listing_id}", data={"form_data": "{not json"}).status_code == 400
+
     business_form = {
         "kind": "business",
         "name": "Kakadia Builders",

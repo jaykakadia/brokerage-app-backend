@@ -293,6 +293,8 @@ async def update_listing(
     owner_name: Optional[str] = Form(None),
     owner_role: Optional[str] = Form(None),
     reference_code: Optional[str] = Form(None),
+    form_data: Optional[str] = Form(None),
+    remove_image_ids: Optional[str] = Form(None),  # comma-separated ListingImage ids to delete
     photos: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -327,9 +329,22 @@ async def update_listing(
         listing.owner_role = owner_role.strip()
     if reference_code is not None:
         listing.reference_code = reference_code.strip() if reference_code else None
+    if form_data is not None:
+        try:
+            listing.form_data = json.loads(form_data)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="form_data must be valid JSON.")
+
+    removed_files: List[str] = []
+    if remove_image_ids:
+        ids = {int(part) for part in remove_image_ids.split(",") if part.strip().isdigit()}
+        for img in [i for i in listing.images if i.id in ids]:
+            removed_files.append(img.file_path)
+            listing.images.remove(img)
+        db.flush()
 
     # Handle additional photos
-    start_order = len(listing.images)
+    start_order = max((img.sort_order for img in listing.images), default=-1) + 1
     for idx, photo in enumerate(photos[:10]):
         if photo.filename:
             rel_path, orig_name, f_size, m_type = await storage_service.validate_and_save_listing_image(
@@ -346,6 +361,9 @@ async def update_listing(
             db.add(img)
 
     db.commit()
+    # Remove files only once the database change is saved
+    for path in removed_files:
+        storage_service.delete_file(path)
     db.refresh(listing)
     return APIResponse(status="success", data=ListingRead.model_validate(listing))
 

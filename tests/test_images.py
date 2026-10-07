@@ -127,3 +127,31 @@ def test_path_traversal_and_max_photos(client, test_user):
     listing_many = res_many.json()["data"]
     assert len(listing_many["images"]) <= 10
 
+
+
+def test_edit_listing_removes_and_adds_photos(client, test_user):
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00" + (b"\x00" * 100)
+
+    def photo(name):
+        return ("photos", (name, io.BytesIO(jpeg_bytes), "image/jpeg"))
+
+    listing = client.post(
+        "/api/v1/listings",
+        data={"title": "Two photos", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        files=[photo("a.jpg"), photo("b.jpg")]
+    ).json()["data"]
+    first, second = listing["images"]
+
+    res = client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        data={"remove_image_ids": str(first["id"])},
+        files=[photo("c.jpg")]
+    )
+    assert res.status_code == 200
+    images = res.json()["data"]["images"]
+    assert [img["id"] for img in images][0] == second["id"]
+    assert len(images) == 2
+    assert first["id"] not in [img["id"] for img in images]
+    # New photos go after the ones that are kept
+    assert images[1]["sort_order"] > second["sort_order"]
