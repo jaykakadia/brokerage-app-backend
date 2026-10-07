@@ -55,7 +55,7 @@ def update_profile(
         otp = (req.otp or "").strip()
         if not otp:
             raise HTTPException(status_code=400, detail="OTP is required to change name, mobile or email.")
-        if not auth_service.verify_otp(email_clean, "profile_update", otp, consume=True):
+        if not auth_service.verify_otp(email_clean, "profile_update", otp, consume=True, db=db):
             raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
         if email_clean != current_user.email:

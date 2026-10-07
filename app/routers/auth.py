@@ -53,11 +53,11 @@ def send_otp(req: SendOtpRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-otp", response_model=MessageResponse)
-def verify_otp(req: VerifyOtpRequest):
-    is_valid = auth_service.verify_otp(req.email, "register", req.otp, consume=False)
+def verify_otp(req: VerifyOtpRequest, db: Session = Depends(get_db)):
+    is_valid = auth_service.verify_otp(req.email, "register", req.otp, consume=False, db=db)
     if not is_valid:
         # Also check for forgot/profile_update
-        is_valid = auth_service.verify_otp(req.email, "forgot", req.otp, consume=False)
+        is_valid = auth_service.verify_otp(req.email, "forgot", req.otp, consume=False, db=db)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -146,7 +146,7 @@ def reset_password(
     otp = (req.otp or "").strip()
     if not otp:
         raise HTTPException(status_code=400, detail="OTP is required to reset your password.")
-    if not auth_service.verify_otp(email_clean, "forgot", otp, consume=True):
+    if not auth_service.verify_otp(email_clean, "forgot", otp, consume=True, db=db):
         raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
     user = db.query(User).filter(User.email == email_clean).first()

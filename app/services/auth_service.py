@@ -16,6 +16,12 @@ from app.services.listing_assignment import claim_assigned_listings
 
 
 OTP_RESEND_COOLDOWN_SECONDS = 60
+OTP_MAX_ATTEMPTS = 5
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite hands back naive datetimes even for timezone-aware columns
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 class OTPRecord:
@@ -24,7 +30,7 @@ class OTPRecord:
         self.action = action
         self.expires_at = expires_at
         self.attempts = 0
-        self.max_attempts = 5
+        self.max_attempts = OTP_MAX_ATTEMPTS
         self.resend_count = 0
         self.is_used = False
         self.created_at = datetime.now(timezone.utc)
@@ -79,6 +85,14 @@ class AuthService:
                     )
 
         existing = self._otp_store.get(key)
+        # The API runs several worker processes, each with its own _otp_store, so the
+        # database row is the shared view of the last OTP sent for this email.
+        latest_row = self._latest_otp_row(db, email_clean, action) if db else None
+        if latest_row:
+            existing = OTPRecord(latest_row.otp_hash, action, _as_utc(latest_row.expires_at))
+            existing.created_at = _as_utc(latest_row.last_sent_at)
+            existing.resend_count = latest_row.resend_count
+            existing.is_used = latest_row.is_used
 
         # Rate limit: 60 seconds cooldown between resends
         if existing and not existing.is_used:
@@ -143,10 +157,31 @@ class AuthService:
 
         return code
 
-    def verify_otp(self, email: str, action: str, code: str, consume: bool = True) -> bool:
-        """Validates OTP hash, single-use, and attempt limit."""
+    @staticmethod
+    def _latest_otp_row(db: Session, email: str, action: str) -> Optional[OtpVerification]:
+        return (
+            db.query(OtpVerification)
+            .filter(OtpVerification.email == email, OtpVerification.action == action)
+            .order_by(OtpVerification.id.desc())
+            .first()
+        )
+
+    def verify_otp(
+        self, email: str, action: str, code: str, consume: bool = True, db: Optional[Session] = None
+    ) -> bool:
+        """Validates OTP hash, single-use, and attempt limit.
+
+        With a db session the stored OtpVerification row is authoritative, so the OTP
+        verifies no matter which worker process sent it. Without one (or when no row
+        exists) only this process's memory cache is checked.
+        """
         email_clean = email.lower().strip()
         key = (email_clean, action)
+
+        row = self._latest_otp_row(db, email_clean, action) if db else None
+        if row:
+            return self._verify_otp_row(db, row, key, email_clean, code, consume)
+
         record = self._otp_store.get(key)
         if not record:
             return False
@@ -168,6 +203,29 @@ class AuthService:
                 record.is_used = True
             return True
         return False
+
+    def _verify_otp_row(
+        self, db: Session, row: OtpVerification, key: Tuple[str, str], email_clean: str, code: str, consume: bool
+    ) -> bool:
+        now = datetime.now(timezone.utc)
+        if row.is_used or now > _as_utc(row.expires_at):
+            return False
+
+        if row.attempts >= OTP_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Maximum verification attempts exceeded. Please request a new OTP."
+            )
+
+        row.attempts += 1
+        matched = secrets.compare_digest(row.otp_hash, self._hash_otp(email_clean, code))
+        if matched and consume:
+            row.is_used = True
+            cached = self._otp_store.get(key)
+            if cached and cached.hashed_code == row.otp_hash:
+                cached.is_used = True
+        db.commit()
+        return matched
 
     def register_user(self, db: Session, req: RegisterRequest) -> Tuple[User, str, str]:
         """Registers a new user and returns (user, token, csrf_token)."""
@@ -196,7 +254,7 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Please verify your email with the OTP before creating an account."
             )
-        if not self.verify_otp(email_clean, "register", otp_clean, consume=True):
+        if not self.verify_otp(email_clean, "register", otp_clean, consume=True, db=db):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired OTP."

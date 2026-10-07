@@ -1,6 +1,7 @@
 import pytest
 from app.services.mail_service import mail_service
 from app.services.auth_service import auth_service
+from app.db.models.user import User
 from datetime import datetime, timedelta, timezone
 
 
@@ -148,3 +149,16 @@ def test_failed_send_does_not_start_cooldown(monkeypatch):
     monkeypatch.setattr(mail_service, "send_verification_otp", lambda *a, **k: True)
     code = auth_service.generate_and_store_otp(email, "register")
     assert auth_service.verify_otp(email, "register", code)
+
+
+def test_otp_verifies_across_worker_processes(db_session):
+    # Production runs several uvicorn workers; the OTP may be sent by one and checked by another
+    email = "multiworker@example.com"
+    db_session.add(User(name="Multi", email=email, phone="9000000001", password_hash="x"))
+    db_session.commit()
+    code = auth_service.generate_and_store_otp(email, "forgot", db=db_session)
+
+    auth_service._otp_store.pop((email, "forgot"))  # simulate the other worker's empty cache
+    assert auth_service.verify_otp(email, "forgot", "000000", db=db_session) is False
+    assert auth_service.verify_otp(email, "forgot", code, consume=True, db=db_session) is True
+    assert auth_service.verify_otp(email, "forgot", code, consume=True, db=db_session) is False

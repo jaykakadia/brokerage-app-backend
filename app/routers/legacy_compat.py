@@ -53,17 +53,19 @@ def legacy_send_otp(
     email: str = Form(...),
     action: str = Form("register"),
     name: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None)
+    phone: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
 ):
-    return auth_send_otp(SendOtpRequest(email=email, action=action, name=name, phone=phone))
+    return auth_send_otp(SendOtpRequest(email=email, action=action, name=name, phone=phone), db)
 
 
 @router.post("/verify_otp.php")
 def legacy_verify_otp(
     email: str = Form(...),
-    otp: str = Form(...)
+    otp: str = Form(...),
+    db: Session = Depends(get_db)
 ):
-    return auth_verify_otp(VerifyOtpRequest(email=email, otp=otp))
+    return auth_verify_otp(VerifyOtpRequest(email=email, otp=otp), db)
 
 
 @router.post("/reset_password.php")
