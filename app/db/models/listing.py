@@ -16,6 +16,8 @@ class Listing(Base, TimestampMixin):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     owner_name: Mapped[str] = mapped_column(String(150), nullable=False)
     owner_role: Mapped[str] = mapped_column(String(50), default="Owner", nullable=False)
+    # Email an admin assigned this listing to before that user had an account; cleared once they sign up.
+    assigned_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     
     # Reference/employee fields (ref code as business field, employee_id for Phase 2 FK)
     reference_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)

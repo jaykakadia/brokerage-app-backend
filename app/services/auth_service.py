@@ -12,6 +12,7 @@ from app.db.models.user import User
 from app.db.models.otp import OtpVerification
 from app.schemas.auth import BootstrapAdminRequest, RegisterRequest, LoginRequest
 from app.services.mail_service import mail_service
+from app.services.listing_assignment import claim_assigned_listings
 
 
 OTP_RESEND_COOLDOWN_SECONDS = 60
@@ -214,6 +215,8 @@ class AuthService:
             leads_used=0
         )
         db.add(new_user)
+        db.flush()
+        claim_assigned_listings(db, new_user)
         db.commit()
         db.refresh(new_user)
 
