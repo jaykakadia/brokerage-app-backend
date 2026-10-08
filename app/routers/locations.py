@@ -57,7 +57,12 @@ def update_location(
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found.")
     if req.city_name is not None:
-        loc.city_name = req.city_name.strip()
+        name = req.city_name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="City name is required.")
+        if len(name) > 100:
+            raise HTTPException(status_code=400, detail="City name cannot exceed 100 characters.")
+        loc.city_name = name
     if req.state is not None:
         loc.state = req.state.strip()
     if req.category is not None:

@@ -28,6 +28,12 @@ def test_locations_flow(client, admin_user, test_user):
     list_res = client.get("/api/v1/locations")
     assert any(l["city_name"] == "Rewari" for l in list_res.json()["data"])
 
-    # 5. Delete location
+    # 5. Admin can rename a city, including a familiar name in brackets
+    edit_res = client.put(f"/api/v1/locations/{loc_id}", json={"city_name": "Bengaluru (Bangalore)"})
+    assert edit_res.status_code == 200
+    assert edit_res.json()["data"]["city_name"] == "Bengaluru (Bangalore)"
+    assert client.put(f"/api/v1/locations/{loc_id}", json={"city_name": "   "}).status_code == 400
+
+    # 6. Delete location
     del_res = client.delete(f"/api/v1/locations/{loc_id}")
     assert del_res.status_code == 200
