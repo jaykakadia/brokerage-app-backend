@@ -1,5 +1,6 @@
 from app.services.auth_service import auth_service
 import io
+from PIL import Image
 import pytest
 from app.db.models.user import User
 from app.core.security import hash_password
@@ -56,7 +57,10 @@ def test_complete_phase1_flow(client, admin_user):
     assert me_resp.json()["data"]["email"] == "alice@example.com"
 
     # --- Step 4: Create Listing with Image Upload ---
-    valid_jpeg_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+    # Uploads are decoded and re-encoded, so this must be a real image
+    jpeg_buf = io.BytesIO()
+    Image.new("RGB", (64, 48), (12, 98, 83)).save(jpeg_buf, "JPEG")
+    valid_jpeg_bytes = jpeg_buf.getvalue()
     listing_payload = {
         "title": "Spacious 3 BHK Apartment in Sector 12",
         "location": "Faridabad, Haryana",

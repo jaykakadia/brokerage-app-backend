@@ -1,9 +1,19 @@
+import io
 import os
 import uuid
 import shutil
 from typing import Tuple, List, Optional
 from fastapi import UploadFile, HTTPException, status
+from PIL import Image, ImageOps, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
+
+# Uploaded photos are re-encoded to keep storage small without visible quality loss:
+# longest side capped at MAX_IMAGE_SIDE px and saved as WebP at WEBP_QUALITY.
+MAX_IMAGE_SIDE = 1600
+WEBP_QUALITY = 80
+# Reject "decompression bomb" images (tiny file, enormous pixel count)
+Image.MAX_IMAGE_PIXELS = 50_000_000
 
 ALLOWED_MIME_TYPES = {
     "image/jpeg": "jpg",
@@ -35,6 +45,25 @@ class StorageService:
         if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
             return "webp"
         return None
+
+    def _optimize_image(self, content: bytes, detected_ext: str) -> Tuple[bytes, str]:
+        """Re-encodes a photo as a resized WebP. Keeps the original if that is already smaller."""
+        try:
+            with Image.open(io.BytesIO(content)) as img:
+                img = ImageOps.exif_transpose(img)  # apply phone camera rotation before EXIF is dropped
+                img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
+                img = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+                out = io.BytesIO()
+                img.save(out, "WEBP", quality=WEBP_QUALITY, method=4)
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or corrupted image file."
+            )
+        optimized = out.getvalue()
+        if len(optimized) >= len(content):
+            return content, detected_ext
+        return optimized, "webp"
 
     async def validate_and_save_listing_image(
         self,
@@ -76,6 +105,8 @@ class StorageService:
                 detail="Invalid image format. Content does not match JPEG, PNG, or WEBP signatures."
             )
 
+        content, detected_ext = await run_in_threadpool(self._optimize_image, content, detected_ext)
+
         # Ensure safe listing directory
         listing_dir = os.path.join(self.base_dir, "listings", str(listing_id))
         os.makedirs(listing_dir, exist_ok=True)
@@ -97,8 +128,8 @@ class StorageService:
             f.write(content)
 
         relative_path = f"/uploads/listings/{listing_id}/{unique_filename}"
-        mime_type = file.content_type or f"image/{detected_ext}"
-        return relative_path, filename, file_size, mime_type
+        mime_type = "image/jpeg" if detected_ext == "jpg" else f"image/{detected_ext}"
+        return relative_path, filename, len(content), mime_type
 
     def delete_file(self, relative_path: str) -> bool:
         """Deletes a single physical file safely."""

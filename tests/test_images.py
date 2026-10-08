@@ -1,13 +1,22 @@
 import io
+import os
 import pytest
+from PIL import Image
+from app.services.storage_service import storage_service, MAX_IMAGE_SIDE
+
+
+def _jpeg_bytes(width=64, height=48):
+    """A real, decodable JPEG (uploads are re-encoded, so fake header-only bytes are rejected)."""
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), (12, 98, 83)).save(out, "JPEG")
+    return out.getvalue()
 
 
 def test_listing_image_upload_and_validation(client, test_user):
     # Log in
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
 
-    # Create dummy JPEG image with valid JPEG header (FF D8 FF E0 ...)
-    jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00" + (b"\x00" * 100)
+    jpeg_bytes = _jpeg_bytes()
 
     # 1. Valid Image Upload with Listing
     res = client.post(
@@ -86,7 +95,7 @@ def test_listing_image_upload_and_validation(client, test_user):
 def test_path_traversal_and_max_photos(client, test_user):
     # Log in
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
-    jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00" + (b"\x00" * 100)
+    jpeg_bytes = _jpeg_bytes()
 
     # 1. Path traversal attempt in filename
     res_traversal = client.post(
@@ -131,7 +140,7 @@ def test_path_traversal_and_max_photos(client, test_user):
 
 def test_edit_listing_removes_and_adds_photos(client, test_user):
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
-    jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00" + (b"\x00" * 100)
+    jpeg_bytes = _jpeg_bytes()
 
     def photo(name):
         return ("photos", (name, io.BytesIO(jpeg_bytes), "image/jpeg"))
@@ -155,3 +164,39 @@ def test_edit_listing_removes_and_adds_photos(client, test_user):
     assert first["id"] not in [img["id"] for img in images]
     # New photos go after the ones that are kept
     assert images[1]["sort_order"] > second["sort_order"]
+
+
+def test_uploaded_photos_are_resized_and_compressed(client, test_user):
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+
+    # A noisy 4000x3000 photo compresses poorly as-is, like a real camera picture
+    big = Image.effect_noise((4000, 3000), 12).convert("RGB")
+    raw = io.BytesIO()
+    big.save(raw, "JPEG", quality=90)  # ~4.5 MB, just under the 5 MB upload limit
+    original = raw.getvalue()
+
+    res = client.post(
+        "/api/v1/listings",
+        data={"title": "Big photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        files=[("photos", ("camera.jpg", io.BytesIO(original), "image/jpeg"))]
+    )
+    assert res.status_code == 200, res.text
+    image = res.json()["data"]["images"][0]
+    assert image["file_path"].endswith(".webp")
+    assert image["mime_type"] == "image/webp"
+    assert image["file_size"] < len(original) * 0.4
+
+    saved_path = os.path.join(storage_service.base_dir, image["file_path"].replace("/uploads/", "", 1))
+    with Image.open(saved_path) as saved:
+        assert max(saved.size) == MAX_IMAGE_SIDE
+        assert saved.size == (MAX_IMAGE_SIDE, 1200)  # aspect ratio kept
+
+    # A file with a JPEG header but broken contents is rejected
+    broken = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 200
+    res_broken = client.post(
+        "/api/v1/listings",
+        data={"title": "Broken photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        files=[("photos", ("broken.jpg", io.BytesIO(broken), "image/jpeg"))]
+    )
+    assert res_broken.status_code == 400
+    assert "Invalid or corrupted image" in res_broken.json()["detail"]
