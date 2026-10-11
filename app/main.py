@@ -20,6 +20,7 @@ from app.routers.role_limits import router as role_limits_router
 from app.routers.blogs import router as blogs_router
 from app.routers.enquiries import router as enquiries_router
 from app.routers.settings import router as settings_router, public_router as public_settings_router
+from app.routers.sitemap import router as sitemap_router
 from app.routers.legacy_compat import router as legacy_router
 
 
@@ -61,6 +62,7 @@ app.include_router(blogs_router)
 app.include_router(enquiries_router)
 app.include_router(settings_router)
 app.include_router(public_settings_router)
+app.include_router(sitemap_router)
 app.include_router(legacy_router)
 
 
