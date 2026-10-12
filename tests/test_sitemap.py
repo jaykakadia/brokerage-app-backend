@@ -149,3 +149,123 @@ def test_sitemap_endpoint_headers(client: TestClient):
     res_api = client.get("/api/v1/sitemap.xml")
     assert res_api.status_code == 200
     assert "application/xml" in res_api.headers["content-type"]
+
+
+def test_sitemap_city_urls_and_index_splitting(db_session, client: TestClient):
+    """Verifies only top cities + active listing cities appear, duplicates merge, and sitemapindex splits."""
+    db = db_session
+    user = User(
+        name="Test User 2",
+        email="sitemap_city_test@tradecall.in",
+        phone="8888888888",
+        password_hash="hashed",
+        role="Owner",
+        status="active"
+    )
+    db.add(user)
+    db.commit()
+
+    # Add 2 listings with Bengaluru aliases to verify merging into a single slug
+    l1 = Listing(
+        user_id=user.id,
+        title="Flat in Bengaluru Central",
+        location="Bengaluru (Bangalore), Karnataka",
+        price=6000000,
+        owner_name="Owner",
+        status="approved"
+    )
+    l2 = Listing(
+        user_id=user.id,
+        title="Flat in Bengaluru Tech Park",
+        location="Bengaluru Urban, Karnataka",
+        price=7000000,
+        owner_name="Owner",
+        status="approved"
+    )
+    # Add 1 listing in non-top city (Palwal)
+    l3 = Listing(
+        user_id=user.id,
+        title="Commercial Shop Palwal",
+        location="Palwal, Haryana",
+        price=1500000,
+        owner_name="Owner",
+        status="approved"
+    )
+    db.add_all([l1, l2, l3])
+    db.commit()
+
+    # 1. Check city URLs exist in normal sitemap
+    xml_content = build_sitemap_xml(db)
+    root = ET.fromstring(xml_content)
+    ns = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    locs = [el.find("ns:loc", ns).text for el in root.findall("ns:url", ns)]
+
+    assert "https://tradecall.in/cities" in locs
+    assert "https://tradecall.in/properties/mumbai" in locs
+    assert "https://tradecall.in/properties/bangalore" in locs
+    assert "https://tradecall.in/properties/pune" in locs
+    assert "https://tradecall.in/properties/delhi-ncr" in locs
+    # Active listing city appears
+    assert "https://tradecall.in/properties/palwal" in locs
+
+    # Bangalore must appear only once despite multiple alias listings
+    bangalore_matches = [url for url in locs if url == "https://tradecall.in/properties/bangalore"]
+    assert len(bangalore_matches) == 1
+
+    # City with 0 listings (e.g. rohtak) must NOT appear in sitemap
+    assert "https://tradecall.in/properties/rohtak" not in locs
+
+    # 2. Test sitemap splitting with a low threshold
+    split_xml = build_sitemap_xml(db, max_per_sitemap=5)
+    split_root = ET.fromstring(split_xml)
+    sitemaps = split_root.findall("ns:sitemap", ns)
+    assert len(sitemaps) >= 2
+    first_loc = sitemaps[0].find("ns:loc", ns).text
+    assert first_loc == "https://tradecall.in/sitemap-1.xml"
+
+    # 3. Test sub-sitemap chunk endpoint
+    res_chunk = client.get("/sitemap-1.xml")
+    assert res_chunk.status_code == 200
+    assert "application/xml" in res_chunk.headers["content-type"]
+    chunk_root = ET.fromstring(res_chunk.text)
+    chunk_urls = chunk_root.findall("ns:url", ns)
+    assert len(chunk_urls) > 0
+
+
+def test_city_properties_seo_route(client: TestClient, db_session):
+    """Checks GET and HEAD on /properties/:city, noindex on zero-listing cities, and 404 for unknown city."""
+    # 1. Valid top city (e.g. Pune) - GET & HEAD both 200, index follow
+    res_pune = client.get("/properties/pune")
+    assert res_pune.status_code == 200
+    assert "text/html" in res_pune.headers["content-type"]
+    html_pune = res_pune.text
+    assert "<title>Properties in Pune | Buy, Rent & Commercial | Tradecall</title>" in html_pune
+    assert 'content="Find the best residential and commercial properties in Pune on Tradecall..."' in html_pune
+    assert 'href="https://tradecall.in/properties/pune"' in html_pune
+    assert "BreadcrumbList" in html_pune
+    assert '"name": "Properties in Pune"' in html_pune
+    assert 'content="index, follow"' in html_pune
+
+    head_pune = client.head("/properties/pune")
+    assert head_pune.status_code == 200
+
+    # 2. Valid top city alias (e.g. bengaluru)
+    res_blr = client.get("/properties/bengaluru")
+    assert res_blr.status_code == 200
+    assert "<title>Properties in Bangalore | Buy, Rent & Commercial | Tradecall</title>" in res_blr.text
+    assert 'href="https://tradecall.in/properties/bangalore"' in res_blr.text
+
+    # 3. Non-top city with zero active listings -> has noindex
+    res_zero = client.get("/properties/rohtak")
+    assert res_zero.status_code == 200
+    assert 'content="noindex"' in res_zero.text
+
+    # 4. Unknown city -> 404 on both GET and HEAD
+    res_unknown = client.get("/properties/unknown-invalid-city-xyz")
+    assert res_unknown.status_code == 404
+    assert "<title>404 - Page Not Found | Tradecall</title>" in res_unknown.text
+
+    head_unknown = client.head("/properties/unknown-invalid-city-xyz")
+    assert head_unknown.status_code == 404
+
+

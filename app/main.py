@@ -21,6 +21,7 @@ from app.routers.blogs import router as blogs_router
 from app.routers.enquiries import router as enquiries_router
 from app.routers.settings import router as settings_router, public_router as public_settings_router
 from app.routers.sitemap import router as sitemap_router
+from app.routers.city_pages import router as city_pages_router
 from app.routers.legacy_compat import router as legacy_router
 
 
@@ -63,6 +64,7 @@ app.include_router(enquiries_router)
 app.include_router(settings_router)
 app.include_router(public_settings_router)
 app.include_router(sitemap_router)
+app.include_router(city_pages_router)
 app.include_router(legacy_router)
 
 
