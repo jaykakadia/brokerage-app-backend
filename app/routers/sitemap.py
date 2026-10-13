@@ -191,8 +191,8 @@ def build_sitemap_chunk_xml(db: Session, page: int, max_per_sitemap: int = MAX_U
     return render_urlset(chunk_urls)
 
 
-@router.get("/sitemap.xml", include_in_schema=False)
-@router.get("/api/v1/sitemap.xml", include_in_schema=False)
+@router.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
+@router.api_route("/api/v1/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
 def get_sitemap(db: Session = Depends(get_db)):
     now = time.time()
     if _cache["main"] and (now - _cache["timestamp"] < CACHE_TTL_SECONDS):
@@ -210,8 +210,8 @@ def get_sitemap(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/sitemap-{page}.xml", include_in_schema=False)
-@router.get("/api/v1/sitemap-{page}.xml", include_in_schema=False)
+@router.api_route("/sitemap-{page}.xml", methods=["GET", "HEAD"], include_in_schema=False)
+@router.api_route("/api/v1/sitemap-{page}.xml", methods=["GET", "HEAD"], include_in_schema=False)
 def get_sitemap_chunk(page: int, db: Session = Depends(get_db)):
     now = time.time()
     cached = _cache["chunks"].get(page)

@@ -146,9 +146,15 @@ def test_sitemap_endpoint_headers(client: TestClient):
     assert "application/xml" in res.headers["content-type"]
     assert "public, max-age=3600" in res.headers["cache-control"]
 
+    head_res = client.head("/sitemap.xml")
+    assert head_res.status_code == 200
+
     res_api = client.get("/api/v1/sitemap.xml")
     assert res_api.status_code == 200
     assert "application/xml" in res_api.headers["content-type"]
+
+    head_res_api = client.head("/api/v1/sitemap.xml")
+    assert head_res_api.status_code == 200
 
 
 def test_sitemap_city_urls_and_index_splitting(db_session, client: TestClient):
