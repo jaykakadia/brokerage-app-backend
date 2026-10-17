@@ -15,8 +15,33 @@ router = APIRouter(tags=["City Pages"])
 BASE_URL = "https://tradecall.in"
 
 
+_html_cache = {
+    "path": None,
+    "mtime": 0.0,
+    "content": None
+}
+
+
 def load_base_index_html() -> str:
-    """Finds and reads built frontend index.html from server root or local repo."""
+    """
+    Finds and reads built frontend index.html from server root or local repo.
+    Re-reads the file whenever its modification time changes, ensuring newly
+    deployed frontend bundles/asset hashes are picked up immediately without server restarts.
+    """
+    cached_path = _html_cache.get("path")
+    if cached_path and os.path.isfile(cached_path):
+        try:
+            mtime = os.path.getmtime(cached_path)
+            if mtime == _html_cache.get("mtime") and _html_cache.get("content") is not None:
+                return _html_cache["content"]
+            with open(cached_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                _html_cache["mtime"] = mtime
+                _html_cache["content"] = content
+                return content
+        except Exception:
+            pass
+
     candidates = [
         os.getenv("FRONTEND_INDEX_PATH"),
         "/var/www/tradecall/index.html",
@@ -26,8 +51,13 @@ def load_base_index_html() -> str:
     for path in candidates:
         if path and os.path.isfile(path):
             try:
+                mtime = os.path.getmtime(path)
                 with open(path, "r", encoding="utf-8") as f:
-                    return f.read()
+                    content = f.read()
+                    _html_cache["path"] = path
+                    _html_cache["mtime"] = mtime
+                    _html_cache["content"] = content
+                    return content
             except Exception:
                 pass
 
@@ -120,8 +150,11 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
 
     html = base_html
 
-    # 1. Replace <title>
-    html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+    # 1. Replace or inject <title>
+    if re.search(r"<title>.*?</title>", html, flags=re.DOTALL):
+        html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+    else:
+        html = html.replace("<head>", f"<head>\n  <title>{title}</title>")
 
     # 2. Replace or inject meta description
     if re.search(r'<meta\s+name=["\']description["\']', html):

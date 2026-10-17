@@ -73,3 +73,35 @@ def test_listing_meta_injection_and_404(client: TestClient, db_session: Session)
 
     res_slug_404 = client.get("/palwal/villa/TC011P-9999999")
     assert res_slug_404.status_code == 404
+
+
+def test_load_base_index_html_reloads_on_mtime_change(monkeypatch, tmp_path):
+    import time
+    from app.routers.city_pages import load_base_index_html, _html_cache
+
+    # Reset cache before and after test
+    _html_cache["path"] = None
+    _html_cache["mtime"] = 0.0
+    _html_cache["content"] = None
+
+    test_file = tmp_path / "index.html"
+    test_file.write_text("<html><head><title>Default</title><script src=\"bundle-v1.js\"></script></head><body></body></html>", encoding="utf-8")
+    monkeypatch.setenv("FRONTEND_INDEX_PATH", str(test_file))
+
+    try:
+        # 1. Initial read loads bundle-v1
+        v1 = load_base_index_html()
+        assert "bundle-v1.js" in v1
+
+        # 2. Simulate frontend deployment (new bundle written to disk)
+        time.sleep(0.05)
+        test_file.write_text("<html><head><title>Default</title><script src=\"bundle-v2.js\"></script></head><body></body></html>", encoding="utf-8")
+
+        # 3. Next call automatically detects mtime change and serves bundle-v2
+        v2 = load_base_index_html()
+        assert "bundle-v2.js" in v2
+        assert "bundle-v1.js" not in v2
+    finally:
+        _html_cache["path"] = None
+        _html_cache["mtime"] = 0.0
+        _html_cache["content"] = None
