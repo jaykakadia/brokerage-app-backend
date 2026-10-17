@@ -98,7 +98,7 @@ def get_public_stats(db: Session = Depends(get_db)):
     }
 
 
-@router.get("", response_model=dict)
+@router.api_route("", methods=["GET", "HEAD"], response_model=dict)
 def get_listings(
     status: Optional[str] = Query("approved"),
     city: Optional[str] = Query(None),

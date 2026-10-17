@@ -39,6 +39,7 @@ def setup_test_environment():
     # Set test upload dir
     test_upload = "./test_uploads"
     settings.UPLOAD_DIR = test_upload
+    settings.MEDIA_BASE_URL = "/uploads"
     settings.SMTP_MOCK = True
     settings.CASHFREE_MOCK = True
     settings.BREVO_API_KEY = ""  # tests must never send real email
