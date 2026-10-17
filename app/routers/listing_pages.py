@@ -88,6 +88,15 @@ def pick_og_image(images: list) -> str:
     return f"{BASE_URL}/uploads/{fp_clean}"
 
 
+def set_or_replace_meta(html: str, attr: str, key: str, content: str) -> str:
+    """Replaces existing <meta> tag or injects before </head> if missing."""
+    escaped_content = html_lib.escape(content, quote=True)
+    pattern = rf'<meta\s+{attr}=["\']{re.escape(key)}["\'][^>]*>'
+    if re.search(pattern, html, flags=re.IGNORECASE):
+        return re.sub(pattern, f'<meta {attr}="{key}" content="{escaped_content}" />', html, count=1, flags=re.IGNORECASE)
+    return html.replace("</head>", f'  <meta {attr}="{key}" content="{escaped_content}" />\n</head>')
+
+
 def build_listing_html(listing: Listing, base_html: str) -> str:
     """Injects listing title, description, canonical, OG tags, and Schema.org JSON-LD."""
     title_text = listing.title.strip() if listing.title else "Property Listing"
@@ -179,60 +188,17 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     # Remove hardcoded 1200x630 dimension tags
     html = re.sub(r'\s*<meta\s+property=["\']og:image:(?:width|height)["\'][^>]*>', '', html)
 
-    html = re.sub(
-        r'<meta\s+property=["\']og:title["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:title" content="{escaped_title}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:description["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:description" content="{escaped_desc}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:url["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:url" content="{canonical_url}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:image["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:image" content="{image_url}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:image:alt["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:image:alt" content="{escaped_alt}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:title["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:title" content="{escaped_title}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:description["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:description" content="{escaped_desc}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:image["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:image" content="{image_url}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:image:alt["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:image:alt" content="{escaped_alt}" />',
-        html,
-        count=1
-    )
+    html = set_or_replace_meta(html, "property", "og:type", "website")
+    html = set_or_replace_meta(html, "property", "og:title", full_title)
+    html = set_or_replace_meta(html, "property", "og:description", meta_desc)
+    html = set_or_replace_meta(html, "property", "og:url", canonical_url)
+    html = set_or_replace_meta(html, "property", "og:image", image_url)
+    html = set_or_replace_meta(html, "property", "og:image:alt", title_text)
+    html = set_or_replace_meta(html, "name", "twitter:card", "summary_large_image")
+    html = set_or_replace_meta(html, "name", "twitter:title", full_title)
+    html = set_or_replace_meta(html, "name", "twitter:description", meta_desc)
+    html = set_or_replace_meta(html, "name", "twitter:image", image_url)
+    html = set_or_replace_meta(html, "name", "twitter:image:alt", title_text)
 
     # 6. Inject Schema.org JSON-LD before </head>
     html = html.replace("</head>", f"{schema_ld}\n</head>")

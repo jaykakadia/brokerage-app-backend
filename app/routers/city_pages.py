@@ -38,7 +38,6 @@ def load_base_index_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TradeCall India - Free Property N Related Business Listing</title>
   <meta name="description" content="Buy, sell or rent flats, plots, houses and commercial property with zero brokerage on TradeCall India." />
-  <link rel="canonical" href="https://tradecall.in/" />
 </head>
 <body>
   <div id="root"></div>
