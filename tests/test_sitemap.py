@@ -246,7 +246,8 @@ def test_city_properties_seo_route(client: TestClient, db_session):
     assert "text/html" in res_pune.headers["content-type"]
     html_pune = res_pune.text
     assert "<title>Properties in Pune | Buy, Rent & Commercial | Tradecall</title>" in html_pune
-    assert 'content="Find the best residential and commercial properties in Pune on Tradecall..."' in html_pune
+    assert 'content="Find verified residential and commercial properties in Pune with zero brokerage on TradeCall India. Explore flats, houses, plots and shops."' in html_pune
+    assert '<h1>Properties in Pune</h1>' in html_pune
     assert 'href="https://tradecall.in/properties/pune"' in html_pune
     assert "BreadcrumbList" in html_pune
     assert '"name": "Properties in Pune"' in html_pune

@@ -1,18 +1,35 @@
+import html as html_lib
 import os
 import re
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.core.cities import get_city_display_name, slugify_city, TOP_CITY_SLUGS
+from app.routers.sitemap import get_listing_path
 
 router = APIRouter(tags=["City Pages"])
 
 BASE_URL = "https://tradecall.in"
+
+
+def format_price(val: Optional[float]) -> str:
+    """Formats numeric price into Indian currency shorthand (Lakhs/Crores)."""
+    if not val or val <= 0:
+        return ""
+    val = float(val)
+    if val >= 10_000_000:
+        cr = val / 10_000_000
+        return f"₹ {cr:.2f}".rstrip("0").rstrip(".") + " Cr"
+    if val >= 100_000:
+        lac = val / 100_000
+        return f"₹ {lac:.2f}".rstrip("0").rstrip(".") + " Lac"
+    return f"₹ {int(val):,}"
 
 
 _html_cache = {
@@ -123,7 +140,7 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     has_listings = is_top_city or city_has_active_listings(norm_slug, db)
 
     title = f"Properties in {city_name} | Buy, Rent & Commercial | Tradecall"
-    description = f"Find the best residential and commercial properties in {city_name} on Tradecall..."
+    description = f"Find verified residential and commercial properties in {city_name} with zero brokerage on TradeCall India. Explore flats, houses, plots and shops."
     canonical = f"{BASE_URL}/properties/{norm_slug}"
 
     breadcrumb_ld = f"""  <!-- City Breadcrumb Schema -->
@@ -224,5 +241,56 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
 
     # 6. Inject BreadcrumbList JSON-LD before </head>
     html = html.replace("</head>", f"{breadcrumb_ld}\n</head>")
+
+    # 7. Inject single <h1> and crawlable links to listings inside <div id="root">
+    city_listings = (
+        db.query(Listing)
+        .filter(Listing.status == "approved")
+        .filter(
+            or_(
+                func.lower(Listing.location).like(f"%{city_name.lower()}%"),
+                func.lower(Listing.location).like(f"%{norm_slug}%")
+            )
+        )
+        .order_by(Listing.is_featured.desc(), Listing.id.desc())
+        .limit(10)
+        .all()
+    )
+
+    if city_listings:
+        items = []
+        for l in city_listings:
+            l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
+            p_str = format_price(float(l.price)) if l.price else ""
+            title_text = html_lib.escape(l.title or "Property")
+            loc_text = html_lib.escape(l.location or city_name)
+            price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
+            items.append(f'<li><a href="{l_path}">{title_text}</a>{price_tag} in {loc_text}</li>')
+        listings_markup = "\n        ".join(items)
+    else:
+        listings_markup = (
+            f'<li>Explore properties in other top cities: '
+            f'<a href="/properties/mumbai">Mumbai</a>, '
+            f'<a href="/properties/bangalore">Bangalore</a>, '
+            f'<a href="/properties/pune">Pune</a>, '
+            f'<a href="/properties/delhi-ncr">Delhi NCR</a>, '
+            f'<a href="/properties/palwal">Palwal</a>. '
+            f'Or <a href="/post-listing">Post your property free in {html_lib.escape(city_name)}</a>.</li>'
+        )
+
+    root_ssr = f"""<div id="root">
+    <main class="city-ssr-wrap">
+      <h1>Properties in {html_lib.escape(city_name)}</h1>
+      <p class="city-lead">{html_lib.escape(description)}</p>
+      <section class="city-listings-section">
+        <h2>Verified Listings in {html_lib.escape(city_name)}</h2>
+        <ul class="city-listings-links">
+          {listings_markup}
+        </ul>
+      </section>
+    </main>
+  </div>"""
+
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
 
     return HTMLResponse(content=html, status_code=status.HTTP_200_OK, media_type="text/html")
