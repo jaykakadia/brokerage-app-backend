@@ -201,6 +201,30 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     # 6. Inject Schema.org JSON-LD before </head>
     html = html.replace("</head>", f"{schema_ld}\n</head>")
 
+    # 7. Inject real, HTML-escaped content inside <div id="root">
+    escaped_headline = html_lib.escape(headline)
+    escaped_price = html_lib.escape(price_str)
+    escaped_loc = html_lib.escape(listing.location or "")
+    escaped_desc_body = html_lib.escape(clean_desc)
+    escaped_img_src = html_lib.escape(image_url, quote=True)
+
+    root_parts = [
+        f"<h1>{escaped_headline}</h1>"
+    ]
+    if escaped_price:
+        root_parts.append(f'<p class="listing-price">{escaped_price}</p>')
+    if escaped_loc:
+        root_parts.append(f'<p class="listing-location">{escaped_loc}</p>')
+    if image_url:
+        root_parts.append(f'<img src="{escaped_img_src}" alt="{escaped_headline}" />')
+    if escaped_desc_body:
+        root_parts.append(f'<p class="listing-description">{escaped_desc_body}</p>')
+
+    root_inner_html = "\n      ".join(root_parts)
+    rendered_root = f'<div id="root">\n    <article class="listing-ssr-preview">\n      {root_inner_html}\n    </article>\n  </div>'
+
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', rendered_root, html, count=1, flags=re.DOTALL)
+
     return html
 
 

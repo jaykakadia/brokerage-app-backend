@@ -43,6 +43,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_x_robots_tag_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
 # 2. Static File Serving for Uploaded Assets
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "listings"), exist_ok=True)

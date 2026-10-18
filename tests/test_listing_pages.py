@@ -63,11 +63,19 @@ def test_listing_meta_injection_and_404(client: TestClient, db_session: Session)
     assert "RealEstateListing" in body
     assert '"price": 7500000.0' in body
 
+    # Verify real HTML content inside <div id="root">
+    assert "<h1>3 BHK Luxury Villa in Sector 2</h1>" in body
+    assert '<p class="listing-price">₹ 75 Lac</p>' in body
+    assert '<p class="listing-location">Sector 2, Palwal, Haryana</p>' in body
+    assert '<img src="https://tradecall.in/uploads/listings/test_villa.webp" alt="3 BHK Luxury Villa in Sector 2" />' in body
+    assert '<p class="listing-description">Spacious villa with private garden and modular kitchen.</p>' in body
+
     # 3. Test slug route /{city}/{slug}/TC011P-{id}
     res_slug = client.get(f"/sector-2/3-bhk-luxury-villa-in-sector-2/TC011P-{listing.id}")
     assert res_slug.status_code == 200
     assert "<title>3 BHK Luxury Villa in Sector 2 | Tradecall</title>" in res_slug.text
     assert f'link rel="canonical" href="https://tradecall.in/sector-2/3-bhk-luxury-villa-in-sector-2/TC011P-{listing.id}"' in res_slug.text
+    assert "<h1>3 BHK Luxury Villa in Sector 2</h1>" in res_slug.text
 
     # 4. Test 404 for non-existent listing
     res_404 = client.get("/listing/9999999")
@@ -76,6 +84,19 @@ def test_listing_meta_injection_and_404(client: TestClient, db_session: Session)
 
     res_slug_404 = client.get("/palwal/villa/TC011P-9999999")
     assert res_slug_404.status_code == 404
+
+
+def test_api_x_robots_tag_middleware(client: TestClient):
+    # API responses must include X-Robots-Tag: noindex
+    api_res = client.get("/api/v1/listings")
+    assert api_res.headers.get("X-Robots-Tag") == "noindex"
+
+    auth_res = client.get("/api/v1/auth/csrf")
+    assert auth_res.headers.get("X-Robots-Tag") == "noindex"
+
+    # Non-API pages must NOT have X-Robots-Tag: noindex
+    health_res = client.get("/health")
+    assert "X-Robots-Tag" not in health_res.headers
 
 
 def test_load_base_index_html_reloads_on_mtime_change(monkeypatch, tmp_path):
