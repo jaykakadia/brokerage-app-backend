@@ -203,3 +203,43 @@ def test_admin_feature_listing(client, test_user, admin_user):
 
     data = client.post(f"/api/v1/listings/{listing_id}/feature", json={"featured": False}).json()["data"]
     assert data["is_featured"] is False and data["featured_until"] is None
+
+
+def test_search_listings_by_user_details(client, test_user, admin_user):
+    """Admin and users can search listings by user name, email, phone number, and listing ID."""
+    # test_user has name, email, phone
+    client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+    res = client.post("/api/v1/listings", data={
+        "title": "Unique Luxury Penthouse in Cyber City",
+        "location": "Gurugram, Haryana",
+        "price": 12000000,
+        "owner_name": test_user.name,
+        "owner_role": "Owner"
+    })
+    assert res.status_code == 200
+    listing_id = res.json()["data"]["id"]
+
+    # Login as admin to approve
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    client.post(f"/api/v1/listings/{listing_id}/status", json={"action": "approve"})
+
+    # Search by user name
+    s_name = client.get(f"/api/v1/listings?search={test_user.name}").json()["data"]
+    assert any(l["id"] == listing_id for l in s_name)
+
+    # Search by user email
+    s_email = client.get(f"/api/v1/listings?search={test_user.email}").json()["data"]
+    assert any(l["id"] == listing_id for l in s_email)
+
+    # Search by user phone
+    s_phone = client.get(f"/api/v1/listings?search={test_user.phone}").json()["data"]
+    assert any(l["id"] == listing_id for l in s_phone)
+
+    # Search by numeric listing ID
+    s_id = client.get(f"/api/v1/listings?search={listing_id}").json()["data"]
+    assert any(l["id"] == listing_id for l in s_id)
+
+    # Search by formatted ID (#123, TC-123)
+    s_fmt = client.get(f"/api/v1/listings?search=#{listing_id}").json()["data"]
+    assert any(l["id"] == listing_id for l in s_fmt)
+

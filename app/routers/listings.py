@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, cast, String
 
 from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
 from app.db.models.listing import Listing, ListingImage
@@ -111,7 +111,7 @@ def get_listings(
     db: Session = Depends(get_db)
 ):
     _expire_featured(db)
-    query = db.query(Listing)
+    query = db.query(Listing).outerjoin(User, Listing.user_id == User.id)
 
     # Filter by user_id if requested (e.g. My Listings in Account)
     if user_id:
@@ -128,14 +128,32 @@ def get_listings(
     if city:
         query = query.filter(Listing.location.ilike(f"%{city.strip()}%"))
 
-    # Search filter (title / description / location)
+    # Search filter (title / description / location / user name, email, phone / owner / ID)
     if search:
-        s_filter = f"%{search.strip()}%"
-        query = query.filter(
-            (Listing.title.ilike(s_filter)) |
-            (Listing.location.ilike(s_filter)) |
-            (Listing.description.ilike(s_filter))
-        )
+        term = search.strip()
+        s_filter = f"%{term}%"
+
+        clean_id = term.lstrip("#").strip()
+        if clean_id.upper().startswith("TC011P-"):
+            clean_id = clean_id[7:]
+        elif clean_id.upper().startswith("TC-"):
+            clean_id = clean_id[3:]
+
+        conds = [
+            Listing.title.ilike(s_filter),
+            Listing.location.ilike(s_filter),
+            Listing.description.ilike(s_filter),
+            Listing.owner_name.ilike(s_filter),
+            Listing.assigned_email.ilike(s_filter),
+            User.name.ilike(s_filter),
+            User.email.ilike(s_filter),
+            User.phone.ilike(s_filter),
+            cast(Listing.form_data, String).ilike(s_filter)
+        ]
+        if clean_id.isdigit() and int(clean_id) <= 2147483647:
+            conds.append(Listing.id == int(clean_id))
+
+        query = query.filter(or_(*conds))
 
     # Reference code filter
     if ref_code:
