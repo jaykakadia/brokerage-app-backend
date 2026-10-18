@@ -213,7 +213,7 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
         root_parts.append(f'<p class="listing-description">{escaped_desc_body}</p>')
 
     root_inner_html = "\n      ".join(root_parts)
-    rendered_root = f'<div id="root">\n    <article class="listing-ssr-preview">\n      {root_inner_html}\n    </article>\n  </div>'
+    rendered_root = f'<div id="root">\n    <article class="listing-ssr-preview" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">\n      {root_inner_html}\n    </article>\n  </div>'
 
     html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', rendered_root, html, count=1, flags=re.DOTALL)
 

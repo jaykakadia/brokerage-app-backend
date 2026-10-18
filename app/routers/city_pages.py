@@ -236,18 +236,20 @@ def get_home_page(db: Session = Depends(get_db)):
         for c in active_popular[:12]
     )
     root_ssr = f"""<div id="root">
-    <header>
-      <h1>{h1_text}</h1>
-      <p>{description}</p>
-    </header>
-    <section>
-      <h2>Properties in Popular Cities</h2>
-      <nav aria-label="Popular Cities">
-        <ul>
+    <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <header>
+        <h1>{h1_text}</h1>
+        <p>{description}</p>
+      </header>
+      <section>
+        <h2>Properties in Popular Cities</h2>
+        <nav aria-label="Popular Cities">
+          <ul>
 {city_links}
-        </ul>
-      </nav>
-    </section>
+          </ul>
+        </nav>
+      </section>
+    </div>
   </div>"""
 
     html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
@@ -365,16 +367,18 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
 
         intro_line = f"{listing_count} properties for sale and rent in {html_lib.escape(city_name)}"
         root_ssr = f"""<div id="root">
-    <main class="city-ssr-wrap">
-      <h1>Properties in {html_lib.escape(city_name)}</h1>
-      <p class="city-lead">{intro_line}. Explore verified residential and commercial properties with zero brokerage on TradeCall India.</p>
-      <section class="city-listings-section">
-        <h2>Verified Listings in {html_lib.escape(city_name)}</h2>
-        <ul class="city-listings-links">
-          {listings_markup}
-        </ul>
-      </section>
-    </main>
+    <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <main class="city-ssr-wrap">
+        <h1>Properties in {html_lib.escape(city_name)}</h1>
+        <p class="city-lead">{intro_line}. Explore verified residential and commercial properties with zero brokerage on TradeCall India.</p>
+        <section class="city-listings-section">
+          <h2>Verified Listings in {html_lib.escape(city_name)}</h2>
+          <ul class="city-listings-links">
+            {listings_markup}
+          </ul>
+        </section>
+      </main>
+    </div>
   </div>"""
     else:
         active_cities = get_active_cities_summary(db)
@@ -383,19 +387,21 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
             for c in active_cities[:8]
         )
         root_ssr = f"""<div id="root">
-    <main class="city-ssr-wrap">
-      <h1>Properties in {html_lib.escape(city_name)}</h1>
-      <p class="city-lead">Currently there are 0 active property listings in {html_lib.escape(city_name)}. Explore verified listings in nearby active cities or be the first to post a listing in {html_lib.escape(city_name)}.</p>
-      <section class="city-empty-section">
-        <h2>Cities with Verified Listings</h2>
-        <ul class="city-listings-links">
-          {nearby_markup}
-        </ul>
-        <div class="city-post-cta" style="margin-top: 20px;">
-          <a href="/post-listing" class="btn-post-free">Post Free Listing in {html_lib.escape(city_name)}</a>
-        </div>
-      </section>
-    </main>
+    <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <main class="city-ssr-wrap">
+        <h1>Properties in {html_lib.escape(city_name)}</h1>
+        <p class="city-lead">Currently there are 0 active property listings in {html_lib.escape(city_name)}. Explore verified listings in nearby active cities or be the first to post a listing in {html_lib.escape(city_name)}.</p>
+        <section class="city-empty-section">
+          <h2>Cities with Verified Listings</h2>
+          <ul class="city-listings-links">
+            {nearby_markup}
+          </ul>
+          <div class="city-post-cta" style="margin-top: 20px;">
+            <a href="/post-listing" class="btn-post-free">Post Free Listing in {html_lib.escape(city_name)}</a>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>"""
 
     html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
