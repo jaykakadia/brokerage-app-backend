@@ -32,6 +32,7 @@ CITY_SLUG_MAP: Dict[str, str] = {
     "hodal": "Hodal",
     "hathin": "Hathin",
     "hasanpur": "Hasanpur",
+    "nuh-mewat": "Nuh Mewat",
     "panipat": "Panipat",
     "karnal": "Karnal",
     "ambala": "Ambala",
@@ -123,6 +124,8 @@ ALIASES: Dict[str, str] = {
     "allahabad": "prayagraj",
     "g-noida": "greater-noida",
     "gnida": "greater-noida",
+    "nuh": "nuh-mewat",
+    "mewat": "nuh-mewat",
 }
 
 
