@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
-from app.routers.city_pages import load_base_index_html
+from app.routers.city_pages import load_base_index_html, set_or_replace_canonical
 from app.routers.sitemap import get_listing_path
 
 router = APIRouter(tags=["Listing Share Pages"])
@@ -159,16 +159,8 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     else:
         html = html.replace("</head>", f'  <meta name="description" content="{escaped_desc}" />\n</head>')
 
-    # 3. Canonical (self-referencing to canonical listing URL)
-    if re.search(r'<link\s+rel=["\']canonical["\']', html):
-        html = re.sub(
-            r'<link\s+rel=["\']canonical["\']\s+href=["\'][^"\']*["\']\s*/?>',
-            f'<link rel="canonical" href="{canonical_url}" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", f'  <link rel="canonical" href="{canonical_url}" />\n</head>')
+    # 3. Canonical (self-referencing to canonical listing URL, guaranteed exactly one)
+    html = set_or_replace_canonical(html, canonical_url)
 
     # 4. Robots meta tag (noindex if not approved)
     robots_content = "index, follow" if listing.status == "approved" else "noindex, follow"

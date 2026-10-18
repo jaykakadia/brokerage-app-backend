@@ -95,7 +95,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
-@app.api_route("/", methods=["GET", "HEAD"], tags=["Health"])
 def health_check():
     return {
         "status": "success",

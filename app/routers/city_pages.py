@@ -32,6 +32,38 @@ def format_price(val: Optional[float]) -> str:
     return f"₹ {int(val):,}"
 
 
+def set_or_replace_canonical(html: str, canonical_url: str) -> str:
+    """Replaces any and all existing canonical link tags with a single canonical tag."""
+    pattern = r'<link\b[^>]*\brel=["\']canonical["\'][^>]*>'
+    html = re.sub(pattern, '', html, flags=re.IGNORECASE)
+    return html.replace("</head>", f'  <link rel="canonical" href="{canonical_url}" />\n</head>')
+
+
+def set_or_replace_meta(html: str, attr: str, key: str, content: str) -> str:
+    """Replaces existing <meta> tag or injects before </head> if missing."""
+    escaped_content = html_lib.escape(content, quote=True)
+    pattern = rf'<meta\s+{attr}=["\']{re.escape(key)}["\'][^>]*>'
+    if re.search(pattern, html, flags=re.IGNORECASE):
+        return re.sub(pattern, f'<meta {attr}="{key}" content="{escaped_content}" />', html, count=1, flags=re.IGNORECASE)
+    return html.replace("</head>", f'  <meta {attr}="{key}" content="{escaped_content}" />\n</head>')
+
+
+HOME_POPULAR_CITIES = [
+    {"name": "Mumbai", "slug": "mumbai"},
+    {"name": "Bangalore", "slug": "bangalore"},
+    {"name": "Pune", "slug": "pune"},
+    {"name": "Delhi NCR", "slug": "delhi-ncr"},
+    {"name": "Hyderabad", "slug": "hyderabad"},
+    {"name": "Chennai", "slug": "chennai"},
+    {"name": "Ahmedabad", "slug": "ahmedabad"},
+    {"name": "Kolkata", "slug": "kolkata"},
+    {"name": "Palwal", "slug": "palwal"},
+    {"name": "Faridabad", "slug": "faridabad"},
+    {"name": "Gurugram", "slug": "gurugram"},
+    {"name": "Noida", "slug": "noida"},
+]
+
+
 _html_cache = {
     "path": None,
     "mtime": 0.0,
@@ -106,6 +138,75 @@ def city_has_active_listings(city_slug: str, db: Session) -> bool:
         if raw_city and slugify_city(raw_city) == norm_slug:
             return True
     return False
+
+
+@router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def get_home_page():
+    """
+    Renders base index.html with server-injected canonical, homepage title,
+    meta tags, and crawlable SSR fallback for popular cities inside #root.
+    """
+    base_html = load_base_index_html()
+    title = "TradeCall India - Buy, Rent & Sell Property in Palwal & NCR"
+    description = (
+        "Buy, sell or rent flats, plots, houses and commercial property in Palwal, "
+        "Faridabad and the NCR with zero brokerage. Contact verified owners directly "
+        "and find local businesses on TradeCall India."
+    )
+    canonical = f"{BASE_URL}/"
+    h1_text = "Buy, Rent & Sell Property in Palwal & NCR"
+
+    html = base_html
+
+    # 1. Replace or inject <title>
+    if re.search(r"<title>.*?</title>", html, flags=re.DOTALL):
+        html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+    else:
+        html = html.replace("<head>", f"<head>\n  <title>{title}</title>")
+
+    # 2. Canonical (guaranteed exactly one, replaces any existing)
+    html = set_or_replace_canonical(html, canonical)
+
+    # 3. Meta description
+    if re.search(r'<meta\s+name=["\']description["\']', html):
+        html = re.sub(
+            r'<meta\s+name=["\']description["\']\s+content=["\'][^"\']*["\']\s*/?>',
+            f'<meta name="description" content="{description}" />',
+            html,
+            count=1
+        )
+    else:
+        html = html.replace("</head>", f'  <meta name="description" content="{description}" />\n</head>')
+
+    # 4. OpenGraph and Twitter tags
+    html = set_or_replace_meta(html, "property", "og:title", title)
+    html = set_or_replace_meta(html, "property", "og:description", description)
+    html = set_or_replace_meta(html, "property", "og:url", canonical)
+    html = set_or_replace_meta(html, "name", "twitter:title", title)
+    html = set_or_replace_meta(html, "name", "twitter:description", description)
+
+    # 5. Inject SSR fallback with single <h1> and Popular cities links inside <div id="root">
+    city_links = "\n".join(
+        f'          <li><a href="/properties/{c["slug"]}">Properties in {c["name"]}</a></li>'
+        for c in HOME_POPULAR_CITIES
+    )
+    root_ssr = f"""<div id="root">
+    <header>
+      <h1>{h1_text}</h1>
+      <p>{description}</p>
+    </header>
+    <section>
+      <h2>Properties in Popular Cities</h2>
+      <nav aria-label="Popular Cities">
+        <ul>
+{city_links}
+        </ul>
+      </nav>
+    </section>
+  </div>"""
+
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
+    return HTMLResponse(content=html, status_code=status.HTTP_200_OK, media_type="text/html")
 
 
 @router.api_route("/properties/{city_slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
@@ -184,16 +285,8 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     else:
         html = html.replace("</head>", f'  <meta name="description" content="{description}" />\n</head>')
 
-    # 3. Replace or inject canonical
-    if re.search(r'<link\s+rel=["\']canonical["\']', html):
-        html = re.sub(
-            r'<link\s+rel=["\']canonical["\']\s+href=["\'][^"\']*["\']\s*/?>',
-            f'<link rel="canonical" href="{canonical}" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", f'  <link rel="canonical" href="{canonical}" />\n</head>')
+    # 3. Canonical (guaranteed exactly one, replaces any existing)
+    html = set_or_replace_canonical(html, canonical)
 
     # 4. Robots meta tag: noindex for non-top cities with zero active listings
     robots_content = "index, follow" if has_listings else "noindex"
@@ -208,36 +301,11 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
         html = html.replace("</head>", f'  <meta name="robots" content="{robots_content}" />\n</head>')
 
     # 5. OpenGraph and Twitter tags
-    html = re.sub(
-        r'<meta\s+property=["\']og:title["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:title" content="{title}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:description["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:description" content="{description}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+property=["\']og:url["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta property="og:url" content="{canonical}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:title["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:title" content="{title}" />',
-        html,
-        count=1
-    )
-    html = re.sub(
-        r'<meta\s+name=["\']twitter:description["\']\s+content=["\'][^"\']*["\']\s*/?>',
-        f'<meta name="twitter:description" content="{description}" />',
-        html,
-        count=1
-    )
+    html = set_or_replace_meta(html, "property", "og:title", title)
+    html = set_or_replace_meta(html, "property", "og:description", description)
+    html = set_or_replace_meta(html, "property", "og:url", canonical)
+    html = set_or_replace_meta(html, "name", "twitter:title", title)
+    html = set_or_replace_meta(html, "name", "twitter:description", description)
 
     # 6. Inject BreadcrumbList JSON-LD before </head>
     html = html.replace("</head>", f"{breadcrumb_ld}\n</head>")
