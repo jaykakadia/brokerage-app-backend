@@ -85,13 +85,8 @@ def get_all_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
         items.append({"loc": BASE_URL + path, "lastmod": None})
 
     # 2. City Pages (/properties/:slug)
-    # Include ONLY top cities + cities that have at least 1 active (approved) listing
+    # Include ONLY cities that have at least 1 active (approved) listing
     seen_cities = set()
-    for top_c in TOP_CITIES:
-        slug = top_c["slug"]
-        if slug not in seen_cities:
-            seen_cities.add(slug)
-            items.append({"loc": f"{BASE_URL}/properties/{slug}", "lastmod": None})
 
     approved_cities_query = (
         db.query(Listing.location, Listing.form_data)

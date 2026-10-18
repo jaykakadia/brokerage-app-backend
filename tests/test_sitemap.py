@@ -207,19 +207,19 @@ def test_sitemap_city_urls_and_index_splitting(db_session, client: TestClient):
     locs = [el.find("ns:loc", ns).text for el in root.findall("ns:url", ns)]
 
     assert "https://tradecall.in/cities" in locs
-    assert "https://tradecall.in/properties/mumbai" in locs
+    # Active listing cities appear
     assert "https://tradecall.in/properties/bangalore" in locs
-    assert "https://tradecall.in/properties/pune" in locs
-    assert "https://tradecall.in/properties/delhi-ncr" in locs
-    # Active listing city appears
     assert "https://tradecall.in/properties/palwal" in locs
+
+    # Cities with 0 listings must NOT appear in sitemap
+    assert "https://tradecall.in/properties/mumbai" not in locs
+    assert "https://tradecall.in/properties/pune" not in locs
+    assert "https://tradecall.in/properties/delhi-ncr" not in locs
+    assert "https://tradecall.in/properties/rohtak" not in locs
 
     # Bangalore must appear only once despite multiple alias listings
     bangalore_matches = [url for url in locs if url == "https://tradecall.in/properties/bangalore"]
     assert len(bangalore_matches) == 1
-
-    # City with 0 listings (e.g. rohtak) must NOT appear in sitemap
-    assert "https://tradecall.in/properties/rohtak" not in locs
 
     # 2. Test sitemap splitting with a low threshold
     split_xml = build_sitemap_xml(db, max_per_sitemap=5)
@@ -240,32 +240,57 @@ def test_sitemap_city_urls_and_index_splitting(db_session, client: TestClient):
 
 def test_city_properties_seo_route(client: TestClient, db_session):
     """Checks GET and HEAD on /properties/:city, noindex on zero-listing cities, and 404 for unknown city."""
-    # 1. Valid top city (e.g. Pune) - GET & HEAD both 200, index follow
+    user = User(
+        name="Pune Owner",
+        email="pune_owner@tradecall.in",
+        phone="7777777777",
+        password_hash="hashed",
+        role="Owner",
+        status="active"
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    listing_pune = Listing(
+        user_id=user.id,
+        title="2 BHK in Pune",
+        location="Koregaon Park, Pune, Maharashtra",
+        owner_name="Pune Owner",
+        status="approved"
+    )
+    db_session.add(listing_pune)
+    db_session.commit()
+
+    # 1. City with active listing (e.g. Pune) - GET & HEAD both 200, index follow
     res_pune = client.get("/properties/pune")
     assert res_pune.status_code == 200
     assert "text/html" in res_pune.headers["content-type"]
     html_pune = res_pune.text
     assert "<title>Properties in Pune | Buy, Rent & Commercial | Tradecall</title>" in html_pune
-    assert 'content="Find verified residential and commercial properties in Pune with zero brokerage on TradeCall India. Explore flats, houses, plots and shops."' in html_pune
+    assert "1 properties for sale and rent in Pune" in html_pune
     assert '<h1>Properties in Pune</h1>' in html_pune
     assert 'href="https://tradecall.in/properties/pune"' in html_pune
     assert "BreadcrumbList" in html_pune
     assert '"name": "Properties in Pune"' in html_pune
-    assert 'content="index, follow"' in html_pune
+    assert '<meta name="robots" content="index, follow" />' in html_pune
 
     head_pune = client.head("/properties/pune")
     assert head_pune.status_code == 200
 
-    # 2. Valid top city alias (e.g. bengaluru)
+    # 2. Valid city alias (e.g. bengaluru) - redirects or maps to bangalore
     res_blr = client.get("/properties/bengaluru")
     assert res_blr.status_code == 200
     assert "<title>Properties in Bangalore | Buy, Rent & Commercial | Tradecall</title>" in res_blr.text
     assert 'href="https://tradecall.in/properties/bangalore"' in res_blr.text
 
-    # 3. Non-top city with zero active listings -> has noindex
+    # 3. Cities with zero active listings -> has noindex, follow
     res_zero = client.get("/properties/rohtak")
     assert res_zero.status_code == 200
-    assert 'content="noindex"' in res_zero.text
+    assert '<meta name="robots" content="noindex, follow" />' in res_zero.text
+
+    res_mumbai = client.get("/properties/mumbai")
+    assert res_mumbai.status_code == 200
+    assert '<meta name="robots" content="noindex, follow" />' in res_mumbai.text
 
     # 4. Unknown city -> 404 on both GET and HEAD
     res_unknown = client.get("/properties/unknown-invalid-city-xyz")

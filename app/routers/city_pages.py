@@ -124,27 +124,70 @@ def load_base_index_html() -> str:
 </html>"""
 
 
-def city_has_active_listings(city_slug: str, db: Session) -> bool:
-    """Checks if there is at least 1 approved listing in the city."""
+def get_city_approved_listings(city_slug: str, city_name: str, db: Session) -> List[Listing]:
+    """Finds all approved listings belonging to a city, matching location text or form_data city."""
     norm_slug = slugify_city(city_slug)
-    rows = db.query(Listing.location, Listing.form_data).filter(Listing.status == "approved").all()
-    for loc_str, f_data in rows:
-        raw_city = None
-        if loc_str:
+    norm_city = city_name.lower()
+
+    all_approved = (
+        db.query(Listing)
+        .filter(Listing.status == "approved")
+        .order_by(Listing.is_featured.desc(), Listing.id.desc())
+        .all()
+    )
+
+    matched = []
+    for l in all_approved:
+        is_match = False
+        if l.location:
+            low = l.location.lower()
+            if norm_city in low or norm_slug in low:
+                is_match = True
+            else:
+                parts = [p.strip() for p in l.location.split(",") if p.strip()]
+                raw = parts[-2] if len(parts) >= 3 else (parts[0] if parts else None)
+                if raw and slugify_city(raw) == norm_slug:
+                    is_match = True
+        if not is_match and isinstance(l.form_data, dict):
+            raw = l.form_data.get("city")
+            if raw and (slugify_city(raw) == norm_slug or norm_city in str(raw).lower()):
+                is_match = True
+        if is_match:
+            matched.append(l)
+
+    return matched
+
+
+def get_active_cities_summary(db: Session) -> List[Dict[str, Any]]:
+    """Returns cities that have >= 1 approved listing, sorted by listing count descending."""
+    all_approved = (
+        db.query(Listing.location, Listing.form_data)
+        .filter(Listing.status == "approved")
+        .all()
+    )
+    city_counts: Dict[str, Dict[str, Any]] = {}
+    for loc_str, f_data in all_approved:
+        raw = None
+        if isinstance(f_data, dict) and f_data.get("city"):
+            raw = f_data.get("city")
+        elif loc_str:
             parts = [p.strip() for p in loc_str.split(",") if p.strip()]
-            raw_city = parts[-2] if len(parts) >= 3 else (parts[0] if parts else None)
-        if not raw_city and isinstance(f_data, dict):
-            raw_city = f_data.get("city")
-        if raw_city and slugify_city(raw_city) == norm_slug:
-            return True
-    return False
+            raw = parts[-2] if len(parts) >= 3 else (parts[0] if parts else None)
+        if raw:
+            slug = slugify_city(raw)
+            if slug:
+                if slug not in city_counts:
+                    display = get_city_display_name(slug, db) or raw.strip().title()
+                    city_counts[slug] = {"name": display, "slug": slug, "count": 0}
+                city_counts[slug]["count"] += 1
+    return sorted(city_counts.values(), key=lambda x: (-x["count"], x["name"]))
 
 
 @router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
-def get_home_page():
+def get_home_page(db: Session = Depends(get_db)):
     """
     Renders base index.html with server-injected canonical, homepage title,
-    meta tags, and crawlable SSR fallback for popular cities inside #root.
+    meta tags, and crawlable SSR fallback for popular cities with active listings inside #root.
     """
     base_html = load_base_index_html()
     title = "TradeCall India - Buy, Rent & Sell Property in Palwal & NCR"
@@ -186,9 +229,11 @@ def get_home_page():
     html = set_or_replace_meta(html, "name", "twitter:description", description)
 
     # 5. Inject SSR fallback with single <h1> and Popular cities links inside <div id="root">
+    # Only list cities with at least 1 listing, sorted by listing count
+    active_popular = get_active_cities_summary(db)
     city_links = "\n".join(
         f'          <li><a href="/properties/{c["slug"]}">Properties in {c["name"]}</a></li>'
-        for c in HOME_POPULAR_CITIES
+        for c in active_popular[:12]
     )
     root_ssr = f"""<div id="root">
     <header>
@@ -215,8 +260,8 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     Renders index.html with server-injected meta tags, title, canonical,
     and BreadcrumbList JSON-LD for the requested city.
     Unknown city returns 404 status code for both GET and HEAD.
-    Cities with zero listings receive <meta name="robots" content="noindex">,
-    except for top cities.
+    Cities with zero listings receive <meta name="robots" content="noindex, follow">.
+    Cities with at least 1 listing are indexable and display the exact listing count and crawlable links.
     """
     city_name = get_city_display_name(city_slug, db=db)
     base_html = load_base_index_html()
@@ -237,11 +282,15 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
         )
 
     norm_slug = slugify_city(city_slug)
-    is_top_city = norm_slug in TOP_CITY_SLUGS
-    has_listings = is_top_city or city_has_active_listings(norm_slug, db)
+    matched_listings = get_city_approved_listings(norm_slug, city_name, db)
+    listing_count = len(matched_listings)
+    has_listings = listing_count > 0
 
     title = f"Properties in {city_name} | Buy, Rent & Commercial | Tradecall"
-    description = f"Find verified residential and commercial properties in {city_name} with zero brokerage on TradeCall India. Explore flats, houses, plots and shops."
+    if has_listings:
+        description = f"{listing_count} properties for sale and rent in {city_name}. Explore verified residential and commercial properties with zero brokerage on TradeCall India."
+    else:
+        description = f"Looking for properties in {city_name}? Explore verified properties in nearby cities with zero brokerage on TradeCall India or post a free listing."
     canonical = f"{BASE_URL}/properties/{norm_slug}"
 
     breadcrumb_ld = f"""  <!-- City Breadcrumb Schema -->
@@ -288,17 +337,9 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     # 3. Canonical (guaranteed exactly one, replaces any existing)
     html = set_or_replace_canonical(html, canonical)
 
-    # 4. Robots meta tag: noindex for non-top cities with zero active listings
-    robots_content = "index, follow" if has_listings else "noindex"
-    if re.search(r'<meta\s+name=["\']robots["\']', html):
-        html = re.sub(
-            r'<meta\s+name=["\']robots["\']\s+content=["\'][^"\']*["\']\s*/?>',
-            f'<meta name="robots" content="{robots_content}" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", f'  <meta name="robots" content="{robots_content}" />\n</head>')
+    # 4. Robots meta tag: index, follow if >= 1 listing, else noindex, follow
+    robots_content = "index, follow" if has_listings else "noindex, follow"
+    html = set_or_replace_meta(html, "name", "robots", robots_content)
 
     # 5. OpenGraph and Twitter tags
     html = set_or_replace_meta(html, "property", "og:title", title)
@@ -310,51 +351,49 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     # 6. Inject BreadcrumbList JSON-LD before </head>
     html = html.replace("</head>", f"{breadcrumb_ld}\n</head>")
 
-    # 7. Inject single <h1> and crawlable links to listings inside <div id="root">
-    city_listings = (
-        db.query(Listing)
-        .filter(Listing.status == "approved")
-        .filter(
-            or_(
-                func.lower(Listing.location).like(f"%{city_name.lower()}%"),
-                func.lower(Listing.location).like(f"%{norm_slug}%")
-            )
-        )
-        .order_by(Listing.is_featured.desc(), Listing.id.desc())
-        .limit(10)
-        .all()
-    )
-
-    if city_listings:
+    # 7. Inject single <h1> and crawlable content inside <div id="root">
+    if has_listings:
         items = []
-        for l in city_listings:
+        for l in matched_listings[:15]:
             l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
             p_str = format_price(float(l.price)) if l.price else ""
             title_text = html_lib.escape(l.title or "Property")
             loc_text = html_lib.escape(l.location or city_name)
             price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
             items.append(f'<li><a href="{l_path}">{title_text}</a>{price_tag} in {loc_text}</li>')
-        listings_markup = "\n        ".join(items)
-    else:
-        listings_markup = (
-            f'<li>Explore properties in other top cities: '
-            f'<a href="/properties/mumbai">Mumbai</a>, '
-            f'<a href="/properties/bangalore">Bangalore</a>, '
-            f'<a href="/properties/pune">Pune</a>, '
-            f'<a href="/properties/delhi-ncr">Delhi NCR</a>, '
-            f'<a href="/properties/palwal">Palwal</a>. '
-            f'Or <a href="/post-listing">Post your property free in {html_lib.escape(city_name)}</a>.</li>'
-        )
+        listings_markup = "\n          ".join(items)
 
-    root_ssr = f"""<div id="root">
+        intro_line = f"{listing_count} properties for sale and rent in {html_lib.escape(city_name)}"
+        root_ssr = f"""<div id="root">
     <main class="city-ssr-wrap">
       <h1>Properties in {html_lib.escape(city_name)}</h1>
-      <p class="city-lead">{html_lib.escape(description)}</p>
+      <p class="city-lead">{intro_line}. Explore verified residential and commercial properties with zero brokerage on TradeCall India.</p>
       <section class="city-listings-section">
         <h2>Verified Listings in {html_lib.escape(city_name)}</h2>
         <ul class="city-listings-links">
           {listings_markup}
         </ul>
+      </section>
+    </main>
+  </div>"""
+    else:
+        active_cities = get_active_cities_summary(db)
+        nearby_markup = "\n          ".join(
+            f'<li><a href="/properties/{c["slug"]}">Properties in {html_lib.escape(c["name"])}</a> ({c["count"]} listings)</li>'
+            for c in active_cities[:8]
+        )
+        root_ssr = f"""<div id="root">
+    <main class="city-ssr-wrap">
+      <h1>Properties in {html_lib.escape(city_name)}</h1>
+      <p class="city-lead">Currently there are 0 active property listings in {html_lib.escape(city_name)}. Explore verified listings in nearby active cities or be the first to post a listing in {html_lib.escape(city_name)}.</p>
+      <section class="city-empty-section">
+        <h2>Nearby Cities with Verified Listings</h2>
+        <ul class="city-listings-links">
+          {nearby_markup}
+        </ul>
+        <div class="city-post-cta" style="margin-top: 20px;">
+          <a href="/post-listing" class="btn-post-free">Post Free Listing in {html_lib.escape(city_name)}</a>
+        </div>
       </section>
     </main>
   </div>"""

@@ -187,8 +187,9 @@ def test_single_canonical_count_on_all_pages(client: TestClient, db_session: Ses
     assert '<link rel="canonical" href="https://tradecall.in/" />' in res_home.text
     assert "<title>TradeCall India - Buy, Rent & Sell Property in Palwal & NCR</title>" in res_home.text
     assert "<h1>Buy, Rent & Sell Property in Palwal & NCR</h1>" in res_home.text
-    assert '<a href="/properties/mumbai">Properties in Mumbai</a>' in res_home.text
-    assert '<a href="/properties/palwal">Properties in Palwal</a>' in res_home.text
+    # Active city is in popular cities, empty city is excluded
+    assert '<a href="/properties/gurugram">Properties in Gurugram</a>' in res_home.text
+    assert '<a href="/properties/mumbai">Properties in Mumbai</a>' not in res_home.text
 
     # 2. Listing numeric page "/listing/<id>"
     res_listing = client.get(f"/listing/{listing.id}")
@@ -211,4 +212,65 @@ def test_single_canonical_count_on_all_pages(client: TestClient, db_session: Ses
     assert len(city_canonicals) == 1
     assert '<link rel="canonical" href="https://tradecall.in/properties/mumbai" />' in res_city.text
     assert "<h1>Properties in Mumbai</h1>" in res_city.text
+
+
+def test_city_counts_and_empty_city_noindex(client: TestClient, db_session: Session):
+    user = User(
+        email="city_test_user@tradecall.in",
+        password_hash="fakehash",
+        name="City Test User",
+        phone="9999999997",
+        role="owner",
+        status="active"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    # 2 approved listings in Palwal
+    l1 = Listing(
+        user_id=user.id,
+        title="2 BHK in Palwal City",
+        location="Sector 2, Palwal, Haryana",
+        owner_name="City Test User",
+        status="approved"
+    )
+    l2 = Listing(
+        user_id=user.id,
+        title="Plot in Palwal Omaxe",
+        location="Omaxe City, Palwal, Haryana",
+        owner_name="City Test User",
+        status="approved"
+    )
+    db_session.add_all([l1, l2])
+    db_session.commit()
+
+    # 1. City with listings (Palwal): HTTP 200, index, follow, real count in intro line, crawlable links
+    res_palwal = client.get("/properties/palwal")
+    assert res_palwal.status_code == 200
+    assert '<meta name="robots" content="index, follow" />' in res_palwal.text
+    assert "2 properties for sale and rent in Palwal" in res_palwal.text
+    assert "2 BHK in Palwal City" in res_palwal.text
+
+    # 2. City with 0 listings (Mumbai, Pune): HTTP 200, noindex, follow, helpful message, links to active cities, post free button
+    res_mumbai = client.get("/properties/mumbai")
+    assert res_mumbai.status_code == 200
+    assert '<meta name="robots" content="noindex, follow" />' in res_mumbai.text
+    assert "Currently there are 0 active property listings in Mumbai" in res_mumbai.text
+    assert '<a href="/properties/palwal">Properties in Palwal</a>' in res_mumbai.text
+    assert '<a href="/post-listing" class="btn-post-free">Post Free Listing in Mumbai</a>' in res_mumbai.text
+
+    # 3. Homepage popular cities lists Palwal, excludes Mumbai & Pune
+    res_home = client.get("/")
+    assert '<a href="/properties/palwal">Properties in Palwal</a>' in res_home.text
+    assert '<a href="/properties/mumbai">Properties in Mumbai</a>' not in res_home.text
+    assert '<a href="/properties/pune">Properties in Pune</a>' not in res_home.text
+
+    # 4. Sitemap excludes empty cities
+    res_sitemap = client.get("/sitemap.xml")
+    assert res_sitemap.status_code == 200
+    assert "https://tradecall.in/properties/palwal" in res_sitemap.text
+    assert "https://tradecall.in/properties/mumbai" not in res_sitemap.text
+    assert "https://tradecall.in/properties/pune" not in res_sitemap.text
+
 
