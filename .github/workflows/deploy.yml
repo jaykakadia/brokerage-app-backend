@@ -29,7 +29,16 @@ jobs:
         env:
           CASHFREE_MOCK: "true"
           SMTP_MOCK: "true"
-        run: python -m pytest tests/
+        run: |
+          set +e
+          python -m pytest tests/ > /tmp/pytest.log 2>&1
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            ERROR_OUTPUT=$(head -n 25 /tmp/pytest.log | tr '\n' ' ')
+            echo "::error title=Pytest Failure::$ERROR_OUTPUT"
+            cat /tmp/pytest.log
+            exit $STATUS
+          fi
 
   deploy:
     needs: test
