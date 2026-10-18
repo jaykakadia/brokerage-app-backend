@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -17,6 +17,7 @@ from app.schemas.listing import (
 )
 from app.services.storage_service import storage_service
 from app.services.listing_assignment import assign_listing_to_email
+from app.services.mail_service import mail_service
 
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
@@ -202,6 +203,7 @@ async def create_listing(
     form_data: Optional[str] = Form(None),
     assign_to_email: Optional[str] = Form(None),  # admin only: the user this listing belongs to
     photos: List[UploadFile] = File(default=[]),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -321,6 +323,33 @@ async def create_listing(
 
     db.commit()
     db.refresh(listing)
+
+    # Dispatch listing confirmation email to the user
+    target_email = assign_to_email.strip().lower() if assign_to_email else (current_user.email.strip().lower() if current_user.email else None)
+    target_name = owner_name.strip() if owner_name else current_user.name
+    if target_email:
+        if background_tasks:
+            background_tasks.add_task(
+                mail_service.send_listing_confirmation,
+                to_email=target_email,
+                name=target_name,
+                listing_title=listing.title,
+                listing_id=listing.id,
+                location=listing.location,
+                price=listing.price,
+                status=listing.status
+            )
+        else:
+            mail_service.send_listing_confirmation(
+                to_email=target_email,
+                name=target_name,
+                listing_title=listing.title,
+                listing_id=listing.id,
+                location=listing.location,
+                price=listing.price,
+                status=listing.status
+            )
+
     return APIResponse(status="success", data=_listing_for_viewer(listing, current_user))
 
 

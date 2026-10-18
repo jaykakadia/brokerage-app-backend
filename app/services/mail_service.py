@@ -204,5 +204,88 @@ class MailService:
         """Sends arbitrary transactional email (e.g. payment receipt or plan activation)."""
         return self._send_smtp(to_email, subject, body_html, body_text)
 
+    def send_listing_confirmation(
+        self,
+        to_email: str,
+        name: str,
+        listing_title: str,
+        listing_id: int,
+        location: str,
+        price: float = 0.0,
+        status: str = "pending"
+    ) -> bool:
+        """Sends listing submission confirmation email to the user."""
+        display_name = name or "Customer"
+        subject = f"Listing Confirmation: #{listing_id} - {listing_title[:45]} | TradeCall India"
+
+        status_clean = (status or "pending").lower()
+        if status_clean == "approved":
+            status_text = "Live / Approved"
+            status_bg = "#dcfce7"
+            status_fg = "#166534"
+            status_msg = "Your listing is now live and published on TradeCall India for prospective buyers and renters to discover."
+        else:
+            status_text = "Pending Review"
+            status_bg = "#fef3c7"
+            status_fg = "#92400e"
+            status_msg = "Your listing has been submitted and is currently under review by our moderation team. It will be verified and published shortly."
+
+        price_row = ""
+        if price and price > 0:
+            price_row = f"""
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; color: #6b7280;">Price:</td>
+                <td style="padding: 10px 0; color: #0c6253; font-weight: bold; font-size: 15px;">&#8377;{price:,.0f}</td>
+            </tr>
+            """
+
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px; background: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #0c6253; margin: 0; font-size: 22px;">TradeCall India</h2>
+                <p style="color: #6b7280; font-size: 13px; margin: 4px 0 0;">Zero Brokerage Property &amp; Business Listings</p>
+            </div>
+            <div style="background: #f0faf7; border-left: 4px solid #0c6253; padding: 14px 16px; border-radius: 6px; margin-bottom: 20px;">
+                <h3 style="color: #0c6253; margin: 0 0 6px; font-size: 16px;">Listing Submitted Successfully!</h3>
+                <p style="color: #374151; font-size: 14px; margin: 0;">
+                    Hello {display_name}, your listing has been received and registered in our system.
+                </p>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #6b7280; width: 35%;">Listing ID:</td>
+                    <td style="padding: 10px 0; color: #111827; font-weight: bold;">#{listing_id}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #6b7280;">Title:</td>
+                    <td style="padding: 10px 0; color: #111827; font-weight: bold;">{listing_title}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #6b7280;">Location:</td>
+                    <td style="padding: 10px 0; color: #111827;">{location}</td>
+                </tr>
+                {price_row}
+                <tr>
+                    <td style="padding: 10px 0; color: #6b7280;">Status:</td>
+                    <td style="padding: 10px 0;">
+                        <span style="display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background: {status_bg}; color: {status_fg};">
+                            {status_text}
+                        </span>
+                    </td>
+                </tr>
+            </table>
+            <p style="color: #4b5563; font-size: 13px; line-height: 1.5; margin-bottom: 20px;">
+                {status_msg}
+            </p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
+                &copy; TradeCall India &middot; Direct Property &amp; Business Portal<br>
+                For assistance, contact us at support.tradecall@gmail.com or WhatsApp +91-9992292828
+            </p>
+        </div>
+        """
+        text = f"Hello {display_name},\\n\\nYour listing has been submitted successfully!\\n\\nListing ID: #{listing_id}\\nTitle: {listing_title}\\nLocation: {location}\\nStatus: {status_text}\\n\\n{status_msg}\\n\\nTradeCall India"
+        return self._send_smtp(to_email, subject, html, text)
+
 
 mail_service = MailService()

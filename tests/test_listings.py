@@ -1,3 +1,6 @@
+from app.services.mail_service import mail_service
+
+
 def test_listings_flow(client, test_user, admin_user):
     # 1. Log in as user and create listing
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
@@ -26,6 +29,7 @@ def test_listings_flow(client, test_user, admin_user):
     assert "Invalid owner_role" in invalid_role_res.json()["detail"]
 
     # Valid listing creation
+    mail_service.sent_emails.clear()
     create_res = client.post("/api/v1/listings", data={
         "title": "3 BHK Luxury Builder Floor in Sector 2",
         "location": "Palwal, Haryana",
@@ -39,6 +43,15 @@ def test_listings_flow(client, test_user, admin_user):
     listing = create_res.json()["data"]
     listing_id = listing["id"]
     assert listing["status"] == "pending"  # User listings start in pending
+
+    # Verify listing confirmation email dispatched to user
+    confirmation_emails = [m for m in mail_service.sent_emails if m["to"] == test_user.email and f"#{listing_id}" in m["subject"]]
+    assert len(confirmation_emails) >= 1
+    confirm_mail = confirmation_emails[-1]
+    assert "Listing Confirmation" in confirm_mail["subject"]
+    assert "3 BHK Luxury Builder Floor in Sector 2" in confirm_mail["html"]
+    assert "Palwal, Haryana" in confirm_mail["html"]
+    assert "Pending Review" in confirm_mail["html"]
 
     # 2. Public listings only show approved
     public_res = client.get("/api/v1/listings?status=approved")

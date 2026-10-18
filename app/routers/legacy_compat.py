@@ -3,7 +3,7 @@ Legacy API Compatibility Layer (Phase 1).
 Provides thin shims mapping legacy PHP endpoints directly to Phase 1 business logic.
 """
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Request, Response, Form, UploadFile, File
+from fastapi import APIRouter, Depends, Request, Response, Form, UploadFile, File, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -112,13 +112,14 @@ async def legacy_save_listing(
     owner_role: str = Form("Owner"),
     reference_code: Optional[str] = Form(None),
     photos: List[UploadFile] = File(default=[]),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return await listing_create(
         title=title, location=location, price=price, description=description,
         owner_name=owner_name, owner_role=owner_role, reference_code=reference_code,
-        form_data=None, photos=photos, current_user=current_user, db=db
+        form_data=None, photos=photos, background_tasks=background_tasks, current_user=current_user, db=db
     )
 
 
