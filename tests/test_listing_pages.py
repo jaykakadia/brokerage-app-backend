@@ -51,7 +51,10 @@ def test_listing_meta_injection_and_404(client: TestClient, db_session: Session)
     assert 'meta name="description"' in body
     assert "₹ 75 Lac" in body
     assert f'link rel="canonical" href="https://tradecall.in/sector-2/3-bhk-luxury-villa-in-sector-2/TC011P-{listing.id}"' in body
-    assert 'meta property="og:title" content="3 BHK Luxury Villa in Sector 2 | Tradecall"' in body
+    assert 'meta property="og:title" content="3 BHK Luxury Villa in Sector 2"' in body
+    assert 'meta name="twitter:title" content="3 BHK Luxury Villa in Sector 2"' in body
+    assert 'meta property="og:title" content="3 BHK Luxury Villa in Sector 2 | Tradecall"' not in body
+    assert 'meta name="twitter:title" content="3 BHK Luxury Villa in Sector 2 | Tradecall"' not in body
     assert 'meta property="og:image" content="https://tradecall.in/uploads/listings/test_villa.webp"' in body
     assert 'meta property="og:image:alt" content="3 BHK Luxury Villa in Sector 2"' in body
     assert 'og:image:width' not in body

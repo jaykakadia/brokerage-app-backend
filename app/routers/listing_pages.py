@@ -99,8 +99,9 @@ def set_or_replace_meta(html: str, attr: str, key: str, content: str) -> str:
 
 def build_listing_html(listing: Listing, base_html: str) -> str:
     """Injects listing title, description, canonical, OG tags, and Schema.org JSON-LD."""
-    title_text = listing.title.strip() if listing.title else "Property Listing"
-    full_title = f"{title_text} | Tradecall" if "Tradecall" not in title_text else title_text
+    raw_title = listing.title.strip() if listing.title else "Property Listing"
+    headline = re.sub(r"\s*\|\s*Tradecall.*$", "", raw_title, flags=re.IGNORECASE).strip() or "Property Listing"
+    full_title = f"{headline} | Tradecall"
 
     price_str = format_price(float(listing.price)) if listing.price else ""
     summary_parts = [p for p in [price_str, listing.location] if p]
@@ -124,7 +125,7 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     schema_data = {
         "@context": "https://schema.org",
         "@type": "RealEstateListing",
-        "name": title_text,
+        "name": headline,
         "description": meta_desc,
         "url": canonical_url,
         "image": [image_url],
@@ -182,23 +183,20 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
         html = html.replace("</head>", f'  <meta name="robots" content="{robots_content}" />\n</head>')
 
     # 5. OpenGraph and Twitter tags
-    escaped_title = html_lib.escape(full_title, quote=True)
-    escaped_alt = html_lib.escape(title_text, quote=True)
-
     # Remove hardcoded 1200x630 dimension tags
     html = re.sub(r'\s*<meta\s+property=["\']og:image:(?:width|height)["\'][^>]*>', '', html)
 
     html = set_or_replace_meta(html, "property", "og:type", "website")
-    html = set_or_replace_meta(html, "property", "og:title", full_title)
+    html = set_or_replace_meta(html, "property", "og:title", headline)
     html = set_or_replace_meta(html, "property", "og:description", meta_desc)
     html = set_or_replace_meta(html, "property", "og:url", canonical_url)
     html = set_or_replace_meta(html, "property", "og:image", image_url)
-    html = set_or_replace_meta(html, "property", "og:image:alt", title_text)
+    html = set_or_replace_meta(html, "property", "og:image:alt", headline)
     html = set_or_replace_meta(html, "name", "twitter:card", "summary_large_image")
-    html = set_or_replace_meta(html, "name", "twitter:title", full_title)
+    html = set_or_replace_meta(html, "name", "twitter:title", headline)
     html = set_or_replace_meta(html, "name", "twitter:description", meta_desc)
     html = set_or_replace_meta(html, "name", "twitter:image", image_url)
-    html = set_or_replace_meta(html, "name", "twitter:image:alt", title_text)
+    html = set_or_replace_meta(html, "name", "twitter:image:alt", headline)
 
     # 6. Inject Schema.org JSON-LD before </head>
     html = html.replace("</head>", f"{schema_ld}\n</head>")
