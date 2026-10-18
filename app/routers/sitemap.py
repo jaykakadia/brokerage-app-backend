@@ -11,7 +11,7 @@ from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.db.models.blog import Blog
 from app.db.models.location import Location
-from app.core.cities import TOP_CITIES, slugify_city
+from app.core.cities import TOP_CITIES, slugify_city, get_city_display_name
 
 router = APIRouter(tags=["Sitemap"])
 
@@ -102,7 +102,7 @@ def get_all_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
             raw_city = f_data.get("city")
         if raw_city:
             slug = slugify_city(raw_city)
-            if slug and slug not in seen_cities:
+            if slug and slug not in seen_cities and get_city_display_name(slug, db=db):
                 seen_cities.add(slug)
                 items.append({"loc": f"{BASE_URL}/properties/{slug}", "lastmod": None})
 

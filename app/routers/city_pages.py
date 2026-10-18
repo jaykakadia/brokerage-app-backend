@@ -387,7 +387,7 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
       <h1>Properties in {html_lib.escape(city_name)}</h1>
       <p class="city-lead">Currently there are 0 active property listings in {html_lib.escape(city_name)}. Explore verified listings in nearby active cities or be the first to post a listing in {html_lib.escape(city_name)}.</p>
       <section class="city-empty-section">
-        <h2>Nearby Cities with Verified Listings</h2>
+        <h2>Cities with Verified Listings</h2>
         <ul class="city-listings-links">
           {nearby_markup}
         </ul>

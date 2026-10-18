@@ -18,8 +18,19 @@ from app.db.models.user import User
 from app.db.models.location import Location
 from app.db.models.category import Category
 
-# Support both SQLite (default) and PostgreSQL for testing
+# Tests must always use an isolated test database (default: in-memory SQLite)
 TEST_DB_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+
+# Safety guard: refuse to run if database points to a non-test database
+database_url_env = os.getenv("DATABASE_URL", "")
+if database_url_env and not ("test" in database_url_env.lower() or "sqlite" in database_url_env.lower()):
+    settings.DATABASE_URL = "sqlite:///:memory:"
+
+if not TEST_DB_URL.startswith("sqlite") and "test" not in TEST_DB_URL.lower():
+    raise RuntimeError(
+        f"CRITICAL SAFETY ERROR: Refusing to run tests against non-test database: {TEST_DB_URL}. "
+        "Tests must use an in-memory SQLite database ('sqlite:///:memory:') or a database URL containing 'test'."
+    )
 
 if TEST_DB_URL.startswith("sqlite"):
     engine = create_engine(

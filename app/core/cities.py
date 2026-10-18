@@ -119,6 +119,8 @@ ALIASES: Dict[str, str] = {
     "madras": "chennai",
     "gurgaon": "gurugram",
     "allahabad": "prayagraj",
+    "g-noida": "greater-noida",
+    "gnida": "greater-noida",
 }
 
 
