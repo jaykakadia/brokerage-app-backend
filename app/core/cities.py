@@ -43,6 +43,9 @@ CITY_SLUG_MAP: Dict[str, str] = {
     "noida": "Noida",
     "greater-noida": "Greater Noida",
     "ghaziabad": "Ghaziabad",
+    "mathura-vrindavan": "Mathura-Vrindavan",
+    "mathura": "Mathura",
+    "vrindavan": "Vrindavan",
     "lucknow": "Lucknow",
     "kanpur": "Kanpur",
     "varanasi": "Varanasi",
@@ -126,6 +129,8 @@ ALIASES: Dict[str, str] = {
     "gnida": "greater-noida",
     "nuh": "nuh-mewat",
     "mewat": "nuh-mewat",
+    "vrindavan": "mathura-vrindavan",
+    "vrindaban": "mathura-vrindavan",
 }
 
 
