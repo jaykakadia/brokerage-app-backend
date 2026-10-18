@@ -2,7 +2,7 @@ import html as html_lib
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, or_
