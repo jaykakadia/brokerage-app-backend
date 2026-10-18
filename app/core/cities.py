@@ -1,4 +1,6 @@
 import re
+import os
+import json
 from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 
@@ -105,6 +107,46 @@ CITY_SLUG_MAP: Dict[str, str] = {
     "raipur": "Raipur",
 }
 
+# Active towns and cities with approved listings
+ACTIVE_CITIES_EXTRAS: Dict[str, str] = {
+    "chhata": "Chhata",
+    "assandh": "Assandh",
+    "tiruvallur": "Tiruvallur",
+    "dharamshala": "Dharamshala",
+    "mathura-vrindavan": "Mathura-Vrindavan",
+    "vrindavan": "Vrindavan",
+    "mathura": "Mathura",
+    "hasanpur": "Hasanpur",
+    "ballabgarh": "Ballabgarh",
+    "nuh-mewat": "Nuh Mewat",
+    "kota": "Kota",
+    "patna": "Patna",
+    "varanasi": "Varanasi",
+}
+CITY_SLUG_MAP.update(ACTIVE_CITIES_EXTRAS)
+
+# Also load all cities from india_locations.json
+try:
+    _json_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "scripts", "data", "india_locations.json"
+    )
+    if os.path.exists(_json_path):
+        with open(_json_path, "r", encoding="utf-8") as _f:
+            _loc_data = json.load(_f)
+            for _state, _clist in _loc_data.get("states", {}).items():
+                for _item in _clist:
+                    if isinstance(_item, dict) and "city" in _item:
+                        _cname = _item["city"].strip()
+                        if _cname:
+                            _clean = _cname.lower()
+                            _slug = re.sub(r"[^\w\s-]", "", _clean, flags=re.ASCII)
+                            _slug = re.sub(r"[\s-]+", "-", _slug)
+                            if _slug and _slug not in CITY_SLUG_MAP:
+                                CITY_SLUG_MAP[_slug] = _cname
+except Exception:
+    pass
+
 TOP_CITY_SLUGS = {c["slug"] for c in TOP_CITIES}
 
 ALIASES: Dict[str, str] = {
@@ -162,13 +204,24 @@ def get_city_display_name(slug: str, db: Optional[Session] = None) -> Optional[s
     if resolved in CITY_SLUG_MAP:
         return CITY_SLUG_MAP[resolved]
 
-    # Query DB Location table if db session provided
+    # Query DB Location & Listing table if db session provided
     if db is not None:
         from app.db.models.location import Location
+        from app.db.models.listing import Listing
         locations = db.query(Location.city_name).distinct().all()
         for loc in locations:
             city_name = loc[0]
             if city_name and slugify_city(city_name) == resolved:
                 return city_name.strip()
+        listings = db.query(Listing.location, Listing.form_data).filter(Listing.status == "approved").all()
+        for loc_str, f_data in listings:
+            raw = None
+            if isinstance(f_data, dict) and f_data.get("city"):
+                raw = f_data.get("city")
+            elif loc_str:
+                parts = [p.strip() for p in loc_str.split(",") if p.strip()]
+                raw = parts[-2] if len(parts) >= 3 else (parts[0] if parts else None)
+            if raw and slugify_city(str(raw)) == resolved:
+                return str(raw).strip().title()
 
     return None
