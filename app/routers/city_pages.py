@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
+from app.db.models.page_metadata import PageMetadata
 from app.core.cities import get_city_display_name, slugify_city, TOP_CITY_SLUGS
 from app.routers.sitemap import get_listing_path
 
@@ -190,11 +191,16 @@ def get_home_page(db: Session = Depends(get_db)):
     meta tags, and crawlable SSR fallback for popular cities with active listings inside #root.
     """
     base_html = load_base_index_html()
-    title = "TradeCall India - Buy, Rent & Sell Property in Palwal & NCR"
+    custom_meta = db.query(PageMetadata).filter(PageMetadata.path == "/").first()
+    title = custom_meta.meta_title if custom_meta else "TradeCall India - Buy, Rent & Sell Property in Palwal & NCR"
     description = (
-        "Buy, sell or rent flats, plots, houses and commercial property in Palwal, "
-        "Faridabad and the NCR with zero brokerage. Contact verified owners directly "
-        "and find local businesses on TradeCall India."
+        custom_meta.meta_description
+        if custom_meta
+        else (
+            "Buy, sell or rent flats, plots, houses and commercial property in Palwal, "
+            "Faridabad and the NCR with zero brokerage. Contact verified owners directly "
+            "and find local businesses on TradeCall India."
+        )
     )
     canonical = f"{BASE_URL}/"
     h1_text = "Buy, Rent & Sell Property in Palwal & NCR"
@@ -288,11 +294,18 @@ def get_city_properties_page(city_slug: str, db: Session = Depends(get_db)):
     listing_count = len(matched_listings)
     has_listings = listing_count > 0
 
-    title = f"Properties in {city_name} | Buy, Rent & Commercial | Tradecall"
-    if has_listings:
-        description = f"{listing_count} properties for sale and rent in {city_name}. Explore verified residential and commercial properties with zero brokerage on TradeCall India."
+    custom_meta = db.query(PageMetadata).filter(
+        PageMetadata.path.in_([f"/properties/{norm_slug}", f"/properties/{city_slug.lower()}"])
+    ).first()
+    if custom_meta:
+        title = custom_meta.meta_title
+        description = custom_meta.meta_description
     else:
-        description = f"Looking for properties in {city_name}? Explore verified properties in nearby cities with zero brokerage on TradeCall India or post a free listing."
+        title = f"Properties in {city_name} | Buy, Rent & Commercial | Tradecall"
+        if has_listings:
+            description = f"{listing_count} properties for sale and rent in {city_name}. Explore verified residential and commercial properties with zero brokerage on TradeCall India."
+        else:
+            description = f"Looking for properties in {city_name}? Explore verified properties in nearby cities with zero brokerage on TradeCall India or post a free listing."
     canonical = f"{BASE_URL}/properties/{norm_slug}"
 
     breadcrumb_ld = f"""  <!-- City Breadcrumb Schema -->

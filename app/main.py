@@ -24,6 +24,7 @@ from app.routers.sitemap import router as sitemap_router
 from app.routers.city_pages import router as city_pages_router
 from app.routers.listing_pages import router as listing_pages_router
 from app.routers.legacy_compat import router as legacy_router
+from app.routers.page_metadata import router as page_metadata_router
 
 
 app = FastAPI(
@@ -70,6 +71,7 @@ app.include_router(employees_router)
 app.include_router(role_limits_router)
 app.include_router(blogs_router)
 app.include_router(enquiries_router)
+app.include_router(page_metadata_router)
 app.include_router(settings_router)
 app.include_router(public_settings_router)
 app.include_router(sitemap_router)

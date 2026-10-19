@@ -60,10 +60,21 @@ def _expire_featured(db: Session) -> None:
 
 @router.get("/counts", response_model=ListingCountsResponse)
 def get_listing_counts(
+    kind: Optional[str] = Query(None),
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    counts = db.query(Listing.status, func.count(Listing.id)).group_by(Listing.status).all()
+    query = db.query(Listing.status, func.count(Listing.id))
+    if kind == "business":
+        query = query.filter(func.json_extract_path_text(Listing.form_data, "kind") == "business")
+    elif kind == "property":
+        query = query.filter(
+            or_(
+                func.json_extract_path_text(Listing.form_data, "kind") != "business",
+                func.json_extract_path_text(Listing.form_data, "kind").is_(None)
+            )
+        )
+    counts = query.group_by(Listing.status).all()
     count_dict = {
         "pending": 0,
         "approved": 0,
@@ -104,6 +115,7 @@ def get_listings(
     status: Optional[str] = Query("approved"),
     city: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    kind: Optional[str] = Query(None),
     ref_code: Optional[str] = Query(None),
     ref_name: Optional[str] = Query(None),
     user_id: Optional[int] = Query(None),
@@ -116,6 +128,17 @@ def get_listings(
     # Filter by user_id if requested (e.g. My Listings in Account)
     if user_id:
         query = query.filter(Listing.user_id == user_id)
+
+    # Kind filter: 'business' vs 'property'
+    if kind == "business":
+        query = query.filter(func.json_extract_path_text(Listing.form_data, "kind") == "business")
+    elif kind == "property":
+        query = query.filter(
+            or_(
+                func.json_extract_path_text(Listing.form_data, "kind") != "business",
+                func.json_extract_path_text(Listing.form_data, "kind").is_(None)
+            )
+        )
 
     # Status filter
     if status and status.lower() != "all":

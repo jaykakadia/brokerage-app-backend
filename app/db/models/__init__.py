@@ -13,6 +13,7 @@ from app.db.models.employee import Employee
 from app.db.models.role_limit import RoleLimit
 from app.db.models.blog import Blog
 from app.db.models.enquiry import Enquiry
+from app.db.models.page_metadata import PageMetadata
 
 __all__ = [
     "Base",
@@ -31,5 +32,6 @@ __all__ = [
     "RoleLimit",
     "Blog",
     "Enquiry",
+    "PageMetadata",
 ]
 
