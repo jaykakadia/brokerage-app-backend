@@ -215,3 +215,83 @@ def test_admin_edit_and_delete_user(client, admin_user, test_user, db_session):
     db_session.expire_all()
     assert db_session.query(User).filter(User.id == test_user.id).first() is None
     assert client.delete(f"/api/v1/admin/users/{test_user.id}").status_code == 404
+
+
+def test_bulk_user_upload(client, admin_user):
+    import io
+    import openpyxl
+    from app.core.security import verify_password
+
+    # Log in as admin
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+
+    # 1. Test CSV Bulk Upload
+    csv_data = (
+        "Name,Email,Phone,Role,Business Name\n"
+        "Bulk User One,bulk1@example.com,9870000001,Agent,Agency 1\n"
+        "Bulk User Two,bulk2@example.com,9870000002.0,Builder,\n"
+        "Duplicate Email,bulk1@example.com,9870000003,Owner,\n"
+    ).encode("utf-8")
+
+    res = client.post(
+        "/api/v1/admin/users/bulk-upload",
+        files={"file": ("users.csv", csv_data, "text/csv")}
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["created_count"] == 2
+    assert data["skipped_count"] == 1
+    assert data["errors"][0]["reason"] == "Duplicate email in upload file"
+
+    # Verify password is set to email for created user
+    client.post("/api/v1/auth/logout")
+    login_res = client.post("/api/v1/auth/login", json={"email": "bulk1@example.com", "password": "bulk1@example.com"})
+    assert login_res.status_code == 200
+
+    # 2. Test Excel Bulk Upload (.xlsx)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Username", "Email Address", "Mobile No", "Type"])
+    ws.append(["Excel User Three", "bulk3@example.com", 9870000004, "Agent"])
+    ws.append(["Existing User", "bulk1@example.com", 9870000005, "Owner"])  # Already in DB
+
+    excel_bytes = io.BytesIO()
+    wb.save(excel_bytes)
+    excel_bytes.seek(0)
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    res2 = client.post(
+        "/api/v1/admin/users/bulk-upload",
+        files={"file": ("users.xlsx", excel_bytes.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    )
+    assert res2.status_code == 200, res2.text
+    data2 = res2.json()["data"]
+    assert data2["created_count"] == 1
+    assert data2["skipped_count"] == 1
+    assert "already registered" in data2["errors"][0]["reason"]
+
+    # 3. Test Missing Header Column (e.g. missing Phone)
+    bad_csv = "Name,Email\nTest User,test@example.com\n".encode("utf-8")
+    res_bad_headers = client.post(
+        "/api/v1/admin/users/bulk-upload",
+        files={"file": ("missing_col.csv", bad_csv, "text/csv")}
+    )
+    assert res_bad_headers.status_code == 400
+    assert "Required column(s) missing: Phone" in res_bad_headers.json()["detail"]
+
+    # 4. Test Missing Required Row Fields (e.g. blank name / phone in row)
+    missing_fields_csv = (
+        "Name,Email,Phone\n"
+        ",missing_name@example.com,9870000010\n"
+        "Missing Phone,missing_phone@example.com,\n"
+    ).encode("utf-8")
+    res_missing_row = client.post(
+        "/api/v1/admin/users/bulk-upload",
+        files={"file": ("missing_fields.csv", missing_fields_csv, "text/csv")}
+    )
+    assert res_missing_row.status_code == 200
+    missing_data = res_missing_row.json()["data"]
+    assert missing_data["created_count"] == 0
+    assert missing_data["skipped_count"] == 2
+    assert "Required field(s) missing: Name" in missing_data["errors"][0]["reason"]
+    assert "Required field(s) missing: Phone" in missing_data["errors"][1]["reason"]

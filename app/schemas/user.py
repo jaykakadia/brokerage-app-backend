@@ -88,3 +88,25 @@ class AdminUserUpdate(BaseModel):
 
 class RoleUpdateRequest(BaseModel):
     role: CanonicalRole
+
+
+class BulkUserItemError(BaseModel):
+    row: int
+    email: Optional[str] = None
+    reason: str
+
+
+class BulkUserCreatedItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str
+    role: str
+
+
+class BulkUserUploadResponse(BaseModel):
+    total_rows: int
+    created_count: int
+    skipped_count: int
+    created_users: list[BulkUserCreatedItem]
+    errors: list[BulkUserItemError]

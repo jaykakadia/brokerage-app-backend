@@ -1,5 +1,8 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import csv
+import io
+import re
+from typing import List, Optional, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_current_admin, get_db
@@ -8,7 +11,8 @@ from app.db.models.user import User
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.user import (
     UserRead, UserProfileUpdate, ChangePasswordRequest,
-    AdminUserCreate, AdminUserUpdate, RoleUpdateRequest
+    AdminUserCreate, AdminUserUpdate, RoleUpdateRequest,
+    BulkUserUploadResponse, BulkUserCreatedItem, BulkUserItemError
 )
 from app.services.auth_service import auth_service
 from app.services.listing_assignment import claim_assigned_listings
@@ -158,6 +162,233 @@ def create_admin_user(
     db.commit()
     db.refresh(new_user)
     return APIResponse(status="success", data=UserRead.model_validate(new_user))
+
+
+@router.post("/admin/users/bulk-upload", response_model=APIResponse[BulkUserUploadResponse])
+async def bulk_upload_admin_users(
+    file: UploadFile = File(...),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk import users from an Excel (.xlsx/.xls) or CSV (.csv) file.
+    Expected columns: Email, Name (or Username), Phone.
+    Optional columns: Role, Business Name, WhatsApp.
+    Password is automatically set to the user's email address.
+    """
+    filename = (file.filename or "").lower()
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx") or filename.endswith(".xls")):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file format. Please upload an Excel (.xlsx/.xls) or CSV (.csv) file."
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    rows: List[List[Any]] = []
+    if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            sheet = wb.active
+            rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {str(exc)}")
+    else:
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+        reader = csv.reader(io.StringIO(text))
+        rows = [list(row) for row in reader]
+
+    if not rows or len(rows) < 2:
+        raise HTTPException(status_code=400, detail="The file has no data rows. At least one user row is required.")
+
+    # Parse headers
+    raw_headers = [str(cell or "").strip().lower() for cell in rows[0]]
+    col_email = -1
+    col_name = -1
+    col_phone = -1
+    col_role = -1
+    col_business_name = -1
+    col_whatsapp = -1
+
+    for idx, h in enumerate(raw_headers):
+        clean_h = re.sub(r"[^a-z0-9]", "", h)
+        if clean_h in ("email", "emailaddress", "emailid", "mail", "mailid") or "email" in clean_h:
+            if col_email == -1:
+                col_email = idx
+        elif clean_h in ("name", "username", "fullname", "user", "customername", "ownername") or "username" in clean_h or "fullname" in clean_h:
+            if col_name == -1:
+                col_name = idx
+        elif clean_h in ("phone", "mobile", "mobileno", "phonenumber", "mobilenumber", "contact", "contactno") or "mobile" in clean_h or "phone" in clean_h:
+            if col_phone == -1:
+                col_phone = idx
+        elif clean_h in ("role", "userrole", "accounttype", "type"):
+            if col_role == -1:
+                col_role = idx
+        elif clean_h in ("businessname", "company", "companyname", "agency"):
+            if col_business_name == -1:
+                col_business_name = idx
+        elif clean_h in ("whatsapp", "whatsappnumber", "whatsappno", "wa"):
+            if col_whatsapp == -1:
+                col_whatsapp = idx
+
+    missing_columns = []
+    if col_email == -1:
+        missing_columns.append("Email")
+    if col_name == -1:
+        missing_columns.append("Name (or Username)")
+    if col_phone == -1:
+        missing_columns.append("Phone (or Mobile)")
+
+    if missing_columns:
+        cols_str = ", ".join(missing_columns)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Required column(s) missing: {cols_str}. Please update your spreadsheet with the missing column(s), fill in the required data, and resubmit."
+        )
+
+    def _clean_phone(val: Any) -> str:
+        if val is None:
+            return ""
+        if isinstance(val, float):
+            if val.is_integer():
+                val = int(val)
+            else:
+                val = str(val).rstrip("0").rstrip(".")
+        s = str(val).strip()
+        if s.endswith(".0"):
+            s = s[:-2]
+        return s
+
+    def _clean_role(val: Any) -> str:
+        r = str(val or "").strip().lower()
+        if r in ("agent", "broker"):
+            return "Agent"
+        elif r in ("builder", "developer"):
+            return "Builder"
+        elif r == "admin":
+            return "Admin"
+        return "Owner"
+
+    seen_emails: set[str] = set()
+    seen_phones: set[str] = set()
+    created_users: List[BulkUserCreatedItem] = []
+    errors: List[BulkUserItemError] = []
+    total_data_rows = 0
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if not row or all(c is None or str(c).strip() == "" for c in row):
+            continue  # ignore blank rows
+        total_data_rows += 1
+
+        email_val = row[col_email] if 0 <= col_email < len(row) else None
+        name_val = row[col_name] if 0 <= col_name < len(row) else None
+        phone_val = row[col_phone] if 0 <= col_phone < len(row) else None
+        role_val = row[col_role] if 0 <= col_role < len(row) else None
+        bname_val = row[col_business_name] if 0 <= col_business_name < len(row) else None
+        wa_val = row[col_whatsapp] if 0 <= col_whatsapp < len(row) else None
+
+        email = str(email_val or "").strip().lower()
+        phone = _clean_phone(phone_val)
+        name = str(name_val or "").strip()
+        role = _clean_role(role_val)
+        business_name = str(bname_val or "").strip() or None
+        whatsapp = _clean_phone(wa_val) or phone or None
+
+        # Check for missing required row fields
+        missing_fields = []
+        if not name:
+            missing_fields.append("Name")
+        if not email:
+            missing_fields.append("Email")
+        if not phone:
+            missing_fields.append("Phone")
+
+        if missing_fields:
+            fields_str = ", ".join(missing_fields)
+            errors.append(BulkUserItemError(
+                row=row_idx,
+                email=email or None,
+                reason=f"Required field(s) missing: {fields_str}. Please fill in the required information and resubmit."
+            ))
+            continue
+
+        if "@" not in email or "." not in email.split("@")[-1] or len(email) < 5:
+            errors.append(BulkUserItemError(
+                row=row_idx,
+                email=email,
+                reason="Invalid email format. Please provide a valid email address and resubmit."
+            ))
+            continue
+
+        if len(phone) < 7:
+            errors.append(BulkUserItemError(
+                row=row_idx,
+                email=email,
+                reason="Invalid phone number (minimum 7 digits required). Please provide a valid phone number and resubmit."
+            ))
+            continue
+
+        if email in seen_emails:
+            errors.append(BulkUserItemError(row=row_idx, email=email, reason="Duplicate email in upload file"))
+            continue
+
+        if phone in seen_phones:
+            errors.append(BulkUserItemError(row=row_idx, email=email, reason=f"Duplicate phone '{phone}' in upload file"))
+            continue
+
+        if db.query(User.id).filter(User.email == email).first():
+            errors.append(BulkUserItemError(row=row_idx, email=email, reason="Email is already registered"))
+            continue
+
+        if db.query(User.id).filter(User.phone == phone).first():
+            errors.append(BulkUserItemError(row=row_idx, email=email, reason=f"Phone number '{phone}' is already registered"))
+            continue
+
+        seen_emails.add(email)
+        seen_phones.add(phone)
+
+        new_user = User(
+            name=name,
+            phone=phone,
+            email=email,
+            password_hash=hash_password(email),
+            role=role,
+            status="active",
+            business_name=business_name,
+            whatsapp=whatsapp,
+            leads_balance=0,
+            listing_limit=1
+        )
+        db.add(new_user)
+        db.flush()
+        claim_assigned_listings(db, new_user)
+
+        created_users.append(BulkUserCreatedItem(
+            id=new_user.id,
+            name=new_user.name,
+            email=new_user.email,
+            phone=new_user.phone,
+            role=new_user.role
+        ))
+
+    db.commit()
+
+    return APIResponse(
+        status="success",
+        data=BulkUserUploadResponse(
+            total_rows=total_data_rows,
+            created_count=len(created_users),
+            skipped_count=len(errors),
+            created_users=created_users,
+            errors=errors
+        )
+    )
 
 
 @router.post("/admin/users/{user_id}/role", response_model=MessageResponse)
