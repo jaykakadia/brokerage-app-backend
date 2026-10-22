@@ -22,14 +22,31 @@ from app.db.models.category import Category
 TEST_DB_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
 
 def is_safe_test_db(url: str) -> bool:
-    u = (url or "").lower()
-    return u.startswith("sqlite") or "localhost" in u or "127.0.0.1" in u or "test" in u
+    if not url:
+        return False
+    u = url.lower()
+    # Explicitly refuse any production indicators
+    forbidden = ["supabase", "pooler", "tradecall.in", "66.116.254.122"]
+    if any(f in u for f in forbidden):
+        return False
+    # Allow only sqlite or hosts exactly localhost / 127.0.0.1
+    if u.startswith("sqlite"):
+        return True
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(u)
+        hostname = (parsed.hostname or "").lower()
+        if hostname in ("localhost", "127.0.0.1"):
+            return True
+    except Exception:
+        pass
+    return False
 
 # Absolute Safety guard: refuse to run if database points to production or remote host
 if not is_safe_test_db(TEST_DB_URL):
     raise RuntimeError(
         f"CRITICAL SAFETY ERROR: Refusing to run tests against non-test database: {TEST_DB_URL}. "
-        "Tests must use an in-memory SQLite database ('sqlite:///:memory:') or a database URL containing 'test' or 'localhost'."
+        "Tests must use in-memory SQLite ('sqlite:///:memory:') or a host strictly localhost/127.0.0.1 without remote indicators."
     )
 
 settings.DATABASE_URL = TEST_DB_URL

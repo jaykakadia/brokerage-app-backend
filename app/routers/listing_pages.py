@@ -60,57 +60,94 @@ def _listing_city(location: Optional[str], form_data: Dict[str, Any]) -> str:
     return city or "Palwal"
 
 
-def compute_listing_seo_title(listing: Listing, db: Optional[Session] = None) -> str:
+import time
+
+_DUPLICATE_TITLES_CACHE: Dict[str, Any] = {"timestamp": 0.0, "titles": set()}
+
+
+def invalidate_title_cache() -> None:
+    """Invalidates the duplicate SEO title cache."""
+    _DUPLICATE_TITLES_CACHE["timestamp"] = 0.0
+    _DUPLICATE_TITLES_CACHE["titles"] = set()
+
+
+def compute_base_seo_title(listing: Any) -> str:
     """
-    Builds SEO title: {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price} | TradeCall India.
-    Adds '(TC011P-xxx)' only when two or more approved listings would have the exact same title.
+    Computes the base SEO title (without TC011P code or brand suffix):
+    {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price}
     """
-    form_data = listing.form_data or {}
+    form_data = getattr(listing, "form_data", None) or {}
     if not isinstance(form_data, dict):
         form_data = {}
 
-    city = _listing_city(listing.location, form_data) or "Palwal"
-    locality = form_data.get("locality") or (listing.location.split(",")[0].strip() if listing.location else city)
+    location = getattr(listing, "location", "") or ""
+    price = getattr(listing, "price", 0.0)
+    raw_title = getattr(listing, "title", "") or ""
+
+    city = _listing_city(location, form_data) or "Palwal"
+    locality = form_data.get("locality") or (location.split(",")[0].strip() if location else city)
     b_name = form_data.get("businessName")
-    is_business = form_data.get("kind") == "business" or bool(b_name and not form_data.get("propType") and not listing.price)
+    is_business = form_data.get("kind") == "business" or bool(b_name and not form_data.get("propType") and not price)
 
     if is_business:
         cat_name = form_data.get("category") or form_data.get("categoryName") or "Business"
-        base_title = f"{b_name or listing.title or 'Business'} - {cat_name} in {city}"
-    else:
-        bhk = form_data.get("bhk") or ""
-        area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
-        unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
-        size_part = bhk
-        if not size_part and area:
-            size_part = f"{area} {unit}".strip()
+        return f"{b_name or raw_title or 'Business'} - {cat_name} in {city}"
 
-        if not size_part and listing.title:
-            bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
-            if bhk_match:
-                size_part = bhk_match.group(1).upper()
+    bhk = form_data.get("bhk") or ""
+    area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
+    unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
+    size_part = bhk
+    if not size_part and area:
+        size_part = f"{area} {unit}".strip()
 
-        prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
-        if prop_type == "Property" and listing.title:
-            for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
-                if pt.lower() in listing.title.lower():
-                    prop_type = pt
-                    break
+    if not size_part and raw_title:
+        bhk_match = re.search(r'(\d+\s*BHK\+?)', raw_title, re.IGNORECASE)
+        if bhk_match:
+            size_part = bhk_match.group(1).upper()
 
-        for_what = (form_data.get("forWhat") or "sale").title()
-        type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
-        loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
-        price_str = format_price(listing.price)
-        price_clause = f" - {price_str}" if price_str else ""
-        base_title = f"{type_clause} for {for_what} {loc_clause}{price_clause}"
+    prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
+    if prop_type == "Property" and raw_title:
+        for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
+            if pt.lower() in raw_title.lower():
+                prop_type = pt
+                break
 
+    for_what = (form_data.get("forWhat") or "sale").title()
+    type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
+    loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
+    price_str = format_price(price)
+    price_clause = f" - {price_str}" if price_str else ""
+    return f"{type_clause} for {for_what} {loc_clause}{price_clause}"
+
+
+def get_duplicate_seo_titles(db: Session, ttl: float = 60.0) -> set:
+    """Finds all base SEO titles produced by 2 or more approved listings."""
+    now = time.time()
+    if now - _DUPLICATE_TITLES_CACHE["timestamp"] < ttl and _DUPLICATE_TITLES_CACHE["titles"]:
+        return _DUPLICATE_TITLES_CACHE["titles"]
+
+    approved = db.query(Listing).filter(Listing.status == "approved").all()
+    counts: Dict[str, int] = {}
+    for l in approved:
+        bt = compute_base_seo_title(l)
+        counts[bt] = counts.get(bt, 0) + 1
+
+    dups = {bt for bt, count in counts.items() if count > 1}
+    _DUPLICATE_TITLES_CACHE["timestamp"] = now
+    _DUPLICATE_TITLES_CACHE["titles"] = dups
+    return dups
+
+
+def compute_listing_seo_title(listing: Listing, db: Optional[Session] = None) -> str:
+    """
+    Builds final SEO title.
+    Adds '(TC011P-xxx)' only when two or more approved listings produce the exact same final base title.
+    """
+    base_title = compute_base_seo_title(listing)
     has_collision = False
     if db is not None:
-        has_collision = db.query(Listing.id).filter(
-            Listing.status == "approved",
-            Listing.id != listing.id,
-            Listing.title == listing.title
-        ).first() is not None
+        dups = get_duplicate_seo_titles(db)
+        has_collision = base_title in dups
 
     unique_code = f"TC011P-{listing.id}"
     if has_collision:

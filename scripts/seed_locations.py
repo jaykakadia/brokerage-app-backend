@@ -24,8 +24,23 @@ from app.db.session import SessionLocal
 from app.db.models.location import Location
 
 def is_safe_db(url: str) -> bool:
-    u = (url or "").lower()
-    return u.startswith("sqlite") or "localhost" in u or "127.0.0.1" in u or "test" in u
+    if not url:
+        return False
+    u = url.lower()
+    forbidden = ["supabase", "pooler", "tradecall.in", "66.116.254.122"]
+    if any(f in u for f in forbidden):
+        return False
+    if u.startswith("sqlite"):
+        return True
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(u)
+        hostname = (parsed.hostname or "").lower()
+        if hostname in ("localhost", "127.0.0.1"):
+            return True
+    except Exception:
+        pass
+    return False
 
 if not is_safe_db(settings.DATABASE_URL):
     raise RuntimeError(

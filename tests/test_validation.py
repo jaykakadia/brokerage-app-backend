@@ -298,9 +298,11 @@ class TestApiValidationIntegration:
         assert updated["title"] == "Updated 500 Cr Land Title"
         assert updated["price"] == 5_000_000_000.0
 
-    def test_title_collision_adds_code_only_on_duplicate(self, db_session, test_user):
+    def test_title_collision_adds_code_only_on_same_final_seo_title(self, db_session, test_user):
         from app.db.models.listing import Listing
-        from app.routers.listing_pages import compute_listing_seo_title
+        from app.routers.listing_pages import compute_listing_seo_title, invalidate_title_cache
+
+        invalidate_title_cache()
 
         l1 = Listing(
             title="3 BHK Luxury Villa in Sector 2",
@@ -316,12 +318,13 @@ class TestApiValidationIntegration:
         db_session.commit()
         db_session.refresh(l1)
 
-        # Single approved listing with this title: no collision, no TC011P- code
+        # Single listing -> no code
         title_single = compute_listing_seo_title(l1, db_session)
         assert f"(TC011P-{l1.id})" not in title_single
-        assert "TradeCall India" in title_single
+        assert title_single.endswith("| TradeCall India")
 
-        # Add second approved listing with exact same title
+        # Different final SEO title (different price 68 Lac vs 65 Lac) -> no code
+        invalidate_title_cache()
         l2 = Listing(
             title="3 BHK Luxury Villa in Sector 2",
             price=6800000.0,
@@ -336,8 +339,59 @@ class TestApiValidationIntegration:
         db_session.commit()
         db_session.refresh(l2)
 
-        # Now both have collision, so TC011P-xxx code is added to differentiate
+        invalidate_title_cache()
+        title_l1_diff = compute_listing_seo_title(l1, db_session)
+        title_l2_diff = compute_listing_seo_title(l2, db_session)
+        assert f"(TC011P-{l1.id})" not in title_l1_diff
+        assert f"(TC011P-{l2.id})" not in title_l2_diff
+
+        # Same final SEO title (same size, locality, city, and price 65 Lac) -> collision code added!
+        l3 = Listing(
+            title="Another 3 BHK Villa in Sector 2",  # raw title differs, but final SEO title is identical
+            price=6500000.0,
+            location="Sector 2, Palwal",
+            owner_name="Alice Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale", "bhk": "3 BHK", "propType": "Villa"}
+        )
+        db_session.add(l3)
+        db_session.commit()
+        db_session.refresh(l3)
+
+        invalidate_title_cache()
         title_l1_coll = compute_listing_seo_title(l1, db_session)
-        title_l2_coll = compute_listing_seo_title(l2, db_session)
+        title_l3_coll = compute_listing_seo_title(l3, db_session)
         assert f"(TC011P-{l1.id})" in title_l1_coll
-        assert f"(TC011P-{l2.id})" in title_l2_coll
+        assert f"(TC011P-{l3.id})" in title_l3_coll
+
+    def test_hub_title_ends_with_single_brand(self, client):
+        res = client.get("/properties/palwal")
+        assert res.status_code == 200
+        # Title must end with single "| TradeCall India" and not duplicate brand
+        assert "| TradeCall India" in res.text
+        assert "| Tradecall | TradeCall India" not in res.text
+
+    def test_create_new_business_listing_without_price_passes(self, client, test_user):
+        import json
+        client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+
+        biz_data = {
+            "kind": "business",
+            "businessName": "New Apex Architects",
+            "categoryName": "Architect",
+            "locality": "Sector 2",
+            "city": "Palwal"
+        }
+        res = client.post("/api/v1/listings", data={
+            "title": "New Apex Architects",
+            "location": "Sector 2, Palwal",
+            "owner_name": "Apex Partner",
+            "owner_role": "Owner",
+            "form_data": json.dumps(biz_data)
+        })
+        assert res.status_code == 200, res.text
+        created = res.json()["data"]
+        assert created["title"] == "New Apex Architects"
+        assert created["price"] == 0.0

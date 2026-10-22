@@ -556,60 +556,6 @@ def get_city_properties_page(
         "itemListElement": item_list_elements
     }
 
-    schemas_code = f"""  <!-- Breadcrumbs & ItemList Schemas -->
-  <script type="application/ld+json">
-{json.dumps(breadcrumb_ld, indent=2)}
-  </script>
-  <script type="application/ld+json">
-{json.dumps(item_list_ld, indent=2)}
-  </script>"""
-
-    html = base_html
-
-    # 1. Title
-    html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
-
-    # 2. Meta description
-    escaped_desc = html_lib.escape(description, quote=True)
-    if re.search(r'<meta\s+name=["\']description["\']', html):
-        html = re.sub(
-            r'<meta\s+name=["\']description["\']\s+content=["\'][^"\']*["\']\s*/?>',
-            f'<meta name="description" content="{escaped_desc}" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", f'  <meta name="description" content="{escaped_desc}" />\n</head>')
-
-    # 3. Canonical & Rel prev/next
-    html = set_or_replace_canonical(html, canonical)
-    html = set_or_replace_rel_links(html, prev_url, next_url)
-
-    # 4. Robots meta tag
-    html = set_or_replace_meta(html, "name", "robots", robots_content)
-
-    # 5. OpenGraph & Twitter
-    html = set_or_replace_meta(html, "property", "og:title", title)
-    html = set_or_replace_meta(html, "property", "og:description", description)
-    html = set_or_replace_meta(html, "property", "og:url", canonical)
-    html = set_or_replace_meta(html, "name", "twitter:title", title)
-    html = set_or_replace_meta(html, "name", "twitter:description", description)
-
-    # 6. Inject Schemas
-    html = html.replace("</head>", f"{schemas_code}\n</head>")
-
-    # 7. Build Pagination nav
-    pagination_links = []
-    for p in range(1, total_pages + 1):
-        p_url = f"/properties/{norm_slug}" if p == 1 else f"/properties/{norm_slug}?page={p}"
-        active_cls = ' class="active"' if p == page else ''
-        pagination_links.append(f'<li><a href="{p_url}"{active_cls}>{p}</a></li>')
-    pagination_nav = f"""<nav aria-label="Pagination" class="pagination-nav">
-          <ul class="pagination-links" style="display: flex; list-style: none; gap: 8px;">
-            {chr(10).join(pagination_links)}
-          </ul>
-        </nav>"""
-
     # Price summary formatted strings & conditional price guide
     price_count = len([l for l in matched_listings if l.price and float(l.price) > 0])
     has_enough_price_data = price_count >= 5
@@ -678,6 +624,52 @@ def get_city_properties_page(
   <script type="application/ld+json">
 {json.dumps(city_faq_ld, indent=2)}
   </script>"""
+
+    html = base_html
+
+    # 1. Title
+    html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+
+    # 2. Meta description
+    escaped_desc = html_lib.escape(description, quote=True)
+    if re.search(r'<meta\s+name=["\']description["\']', html):
+        html = re.sub(
+            r'<meta\s+name=["\']description["\']\s+content=["\'][^"\']*["\']\s*/?>',
+            f'<meta name="description" content="{escaped_desc}" />',
+            html,
+            count=1
+        )
+    else:
+        html = html.replace("</head>", f'  <meta name="description" content="{escaped_desc}" />\n</head>')
+
+    # 3. Canonical & Rel prev/next
+    html = set_or_replace_canonical(html, canonical)
+    html = set_or_replace_rel_links(html, prev_url, next_url)
+
+    # 4. Robots meta tag
+    html = set_or_replace_meta(html, "name", "robots", robots_content)
+
+    # 5. OpenGraph & Twitter
+    html = set_or_replace_meta(html, "property", "og:title", title)
+    html = set_or_replace_meta(html, "property", "og:description", description)
+    html = set_or_replace_meta(html, "property", "og:url", canonical)
+    html = set_or_replace_meta(html, "name", "twitter:title", title)
+    html = set_or_replace_meta(html, "name", "twitter:description", description)
+
+    # 6. Inject Schemas
+    html = html.replace("</head>", f"{schemas_code}\n</head>")
+
+    # 7. Build Pagination nav
+    pagination_links = []
+    for p in range(1, total_pages + 1):
+        p_url = f"/properties/{norm_slug}" if p == 1 else f"/properties/{norm_slug}?page={p}"
+        active_cls = ' class="active"' if p == page else ''
+        pagination_links.append(f'<li><a href="{p_url}"{active_cls}>{p}</a></li>')
+    pagination_nav = f"""<nav aria-label="Pagination" class="pagination-nav">
+          <ul class="pagination-links" style="display: flex; list-style: none; gap: 8px;">
+            {chr(10).join(pagination_links)}
+          </ul>
+        </nav>"""
 
     city_faq_markup = "\n".join(
         f'          <dt style="font-weight: 700; margin-top: 10px;">{html_lib.escape(f["question"])}</dt>\n'
