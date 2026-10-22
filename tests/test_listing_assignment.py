@@ -2,7 +2,7 @@ from app.services.auth_service import auth_service
 
 
 def _listing_data(**extra):
-    return {"title": "2 BHK Flat", "location": "Palwal", "price": 100, "owner_name": "Seller", **extra}
+    return {"title": "2 BHK Flat", "location": "Palwal", "price": 5000000, "owner_name": "Seller", **extra}
 
 
 def test_admin_assigns_listing_to_existing_user(client, admin_user, test_user):

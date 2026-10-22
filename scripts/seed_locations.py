@@ -19,8 +19,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.db.models.location import Location
+
+def is_safe_db(url: str) -> bool:
+    u = (url or "").lower()
+    return u.startswith("sqlite") or "localhost" in u or "127.0.0.1" in u or "test" in u
+
+if not is_safe_db(settings.DATABASE_URL):
+    raise RuntimeError(
+        f"CRITICAL SAFETY ERROR: Refusing to seed locations against non-local database: {settings.DATABASE_URL.split('@')[-1]}"
+    )
 
 DATA_FILE = Path(__file__).parent / "data" / "india_locations.json"
 

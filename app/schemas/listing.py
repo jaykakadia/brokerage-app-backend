@@ -60,6 +60,7 @@ class ListingRead(ListingBase):
     featured_until: Optional[datetime] = None
     assigned_email: Optional[str] = None
     created_at: datetime
+    seo_title: Optional[str] = None
     images: List[ListingImageRead] = []
 
     model_config = {"from_attributes": True}

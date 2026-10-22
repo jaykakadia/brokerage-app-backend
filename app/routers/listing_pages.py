@@ -35,8 +35,8 @@ def parse_listing_id(raw_id: str) -> Optional[int]:
 
 def format_price(val: Optional[float]) -> str:
     """Formats numeric price into Indian currency shorthand (Lakhs/Crores)."""
-    if not val or val <= 0:
-        return ""
+    if val is None or float(val or 0) <= 0:
+        return "Price on request"
     val = float(val)
     if val >= 10_000_000:
         cr = val / 10_000_000
@@ -45,6 +45,78 @@ def format_price(val: Optional[float]) -> str:
         lac = val / 100_000
         return f"₹ {lac:.2f}".rstrip("0").rstrip(".") + " Lac"
     return f"₹ {int(val):,}"
+
+
+def _listing_city(location: Optional[str], form_data: Dict[str, Any]) -> str:
+    city = form_data.get("city")
+    if not city and location:
+        parts = [p.strip() for p in location.split(",") if p.strip()]
+        if len(parts) >= 3:
+            city = parts[-2]
+        elif len(parts) == 2:
+            city = parts[1]
+        elif len(parts) == 1:
+            city = parts[0]
+    return city or "Palwal"
+
+
+def compute_listing_seo_title(listing: Listing, db: Optional[Session] = None) -> str:
+    """
+    Builds SEO title: {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price} | TradeCall India.
+    Adds '(TC011P-xxx)' only when two or more approved listings would have the exact same title.
+    """
+    form_data = listing.form_data or {}
+    if not isinstance(form_data, dict):
+        form_data = {}
+
+    city = _listing_city(listing.location, form_data) or "Palwal"
+    locality = form_data.get("locality") or (listing.location.split(",")[0].strip() if listing.location else city)
+    b_name = form_data.get("businessName")
+    is_business = form_data.get("kind") == "business" or bool(b_name and not form_data.get("propType") and not listing.price)
+
+    if is_business:
+        cat_name = form_data.get("category") or form_data.get("categoryName") or "Business"
+        base_title = f"{b_name or listing.title or 'Business'} - {cat_name} in {city}"
+    else:
+        bhk = form_data.get("bhk") or ""
+        area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
+        unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
+        size_part = bhk
+        if not size_part and area:
+            size_part = f"{area} {unit}".strip()
+
+        if not size_part and listing.title:
+            bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
+            if bhk_match:
+                size_part = bhk_match.group(1).upper()
+
+        prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
+        if prop_type == "Property" and listing.title:
+            for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
+                if pt.lower() in listing.title.lower():
+                    prop_type = pt
+                    break
+
+        for_what = (form_data.get("forWhat") or "sale").title()
+        type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
+        loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
+        price_str = format_price(listing.price)
+        price_clause = f" - {price_str}" if price_str else ""
+        base_title = f"{type_clause} for {for_what} {loc_clause}{price_clause}"
+
+    has_collision = False
+    if db is not None:
+        has_collision = db.query(Listing.id).filter(
+            Listing.status == "approved",
+            Listing.id != listing.id,
+            Listing.title == listing.title
+        ).first() is not None
+
+    unique_code = f"TC011P-{listing.id}"
+    if has_collision:
+        return f"{base_title} ({unique_code}) | TradeCall India"
+    else:
+        return f"{base_title} | TradeCall India"
 
 
 def clean_meta_description(text: str, max_len: int = 160) -> str:
@@ -171,37 +243,34 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     if form_data.get("category"):
         cat_name = str(form_data.get("category"))
 
+    bhk = form_data.get("bhk") or ""
+    area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
+    unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
+    size_part = bhk
+    if not size_part and area:
+        size_part = f"{area} {unit}".strip()
+
+    if not size_part and listing.title:
+        bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
+        if bhk_match:
+            size_part = bhk_match.group(1).upper()
+
+    prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
+    if prop_type == "Property" and listing.title:
+        for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
+            if pt.lower() in listing.title.lower():
+                prop_type = pt
+                break
+
+    for_what = (form_data.get("forWhat") or "sale").title()
+    type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
+    loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
+
     unique_code = f"TC011P-{listing.id}"
+    full_title = compute_listing_seo_title(listing, db)
     if is_business:
-        # Business title: {Business Name} - {Category} in {City} | TradeCall India
-        full_title = f"{b_name or 'Business'} - {cat_name} in {city} | TradeCall India"
         headline = f"{b_name or 'Business'} - {cat_name} in {city}"
     else:
-        # Property title: {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price} ({Code}) | TradeCall India
-        bhk = form_data.get("bhk") or ""
-        area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
-        unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
-        size_part = bhk
-        if not size_part and area:
-            size_part = f"{area} {unit}".strip()
-
-        if not size_part and listing.title:
-            bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
-            if bhk_match:
-                size_part = bhk_match.group(1).upper()
-
-        prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
-        if prop_type == "Property" and listing.title:
-            for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
-                if pt.lower() in listing.title.lower():
-                    prop_type = pt
-                    break
-
-        for_what = (form_data.get("forWhat") or "sale").title()
-        type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
-        loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
-        price_clause = f" - {price_str}" if price_str else ""
-        full_title = f"{type_clause} for {for_what} {loc_clause}{price_clause} ({unique_code}) | TradeCall India"
         headline = f"{type_clause} for {for_what} {loc_clause}"
 
     summary_parts = [p for p in [price_str, listing.location] if p]

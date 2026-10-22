@@ -27,9 +27,11 @@ router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
 
 
-def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool = False) -> dict:
+def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool = False, db: Optional[Session] = None) -> dict:
     """Serializes a listing, leaving out locked contact fields unless the viewer owns it, is an admin or unlocked it."""
+    from app.routers.listing_pages import compute_listing_seo_title
     data = ListingRead.model_validate(listing).model_dump()
+    data["seo_title"] = compute_listing_seo_title(listing, db)
     can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
     if not can_see and isinstance(data.get("form_data"), dict):
         data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
@@ -230,7 +232,7 @@ def get_listing(
     unlocked = user is not None and db.query(LeadReveal).filter(
         LeadReveal.user_id == user.id, LeadReveal.listing_id == listing.id
     ).first() is not None
-    return APIResponse(status="success", data=_listing_for_viewer(listing, user, unlocked))
+    return APIResponse(status="success", data=_listing_for_viewer(listing, user, unlocked, db=db))
 
 
 @router.post("", response_model=APIResponse[ListingRead])
@@ -426,7 +428,7 @@ async def create_listing(
                 status=listing.status
             )
 
-    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user))
+    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user, db=db))
 
 
 @router.patch("/{listing_id}", response_model=APIResponse[ListingRead])
@@ -464,6 +466,11 @@ async def update_listing(
         if len(words) > 50:
             raise HTTPException(status_code=400, detail="Listing title cannot exceed 50 words.")
         listing.title = title.strip()
+    old_price = float(listing.price) if listing.price is not None else None
+    old_fd = listing.form_data if isinstance(listing.form_data, dict) else {}
+    old_locality = old_fd.get("locality") or (listing.location.split(",")[0].strip() if listing.location else "")
+    price_changed = price is not None and (old_price is None or float(price) != old_price)
+
     if location is not None:
         listing.location = location.strip()
     if price is not None:
@@ -494,7 +501,8 @@ async def update_listing(
     if not is_biz:
         if location is not None or form_data is not None:
             loc_check = fd_check.get("locality") or (listing.location.split(",")[0].strip() if listing.location else "")
-            if loc_check:
+            locality_changed = bool(loc_check and loc_check.strip().lower() != (old_locality or "").strip().lower())
+            if locality_changed:
                 is_valid_loc, loc_err = validate_locality(loc_check)
                 if not is_valid_loc:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=loc_err)
@@ -502,7 +510,7 @@ async def update_listing(
                 if isinstance(listing.form_data, dict) and "locality" in listing.form_data:
                     listing.form_data["locality"] = norm_loc
 
-        if price is not None:
+        if price_changed and price is not None:
             for_what = fd_check.get("forWhat", "sale")
             prop_type = fd_check.get("propType", "")
             is_valid_p, p_err, is_suspicious, p_warn = validate_price(listing.price, for_what=for_what, prop_type=prop_type)
@@ -539,7 +547,7 @@ async def update_listing(
     for path in removed_files:
         storage_service.delete_file(path)
     db.refresh(listing)
-    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user))
+    return APIResponse(status="success", data=_listing_for_viewer(listing, current_user, db=db))
 
 
 @router.post("/{listing_id}/status", response_model=MessageResponse)

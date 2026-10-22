@@ -147,7 +147,7 @@ def test_edit_listing_removes_and_adds_photos(client, test_user):
 
     listing = client.post(
         "/api/v1/listings",
-        data={"title": "Two photos", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        data={"title": "Two photos", "location": "Palwal", "price": 5000000, "owner_name": "John", "owner_role": "Owner"},
         files=[photo("a.jpg"), photo("b.jpg")]
     ).json()["data"]
     first, second = listing["images"]
@@ -177,7 +177,7 @@ def test_uploaded_photos_are_resized_and_compressed(client, test_user):
 
     res = client.post(
         "/api/v1/listings",
-        data={"title": "Big photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        data={"title": "Big photo", "location": "Palwal", "price": 5000000, "owner_name": "John", "owner_role": "Owner"},
         files=[("photos", ("camera.jpg", io.BytesIO(original), "image/jpeg"))]
     )
     assert res.status_code == 200, res.text
@@ -195,7 +195,7 @@ def test_uploaded_photos_are_resized_and_compressed(client, test_user):
     broken = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 200
     res_broken = client.post(
         "/api/v1/listings",
-        data={"title": "Broken photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        data={"title": "Broken photo", "location": "Palwal", "price": 5000000, "owner_name": "John", "owner_role": "Owner"},
         files=[("photos", ("broken.jpg", io.BytesIO(broken), "image/jpeg"))]
     )
     assert res_broken.status_code == 400
@@ -237,7 +237,7 @@ def test_bucket_storage_stores_keys_and_serves_public_urls(client, test_user, db
 
     res = client.post(
         "/api/v1/listings",
-        data={"title": "R2 photo", "location": "Palwal", "price": 100, "owner_name": "John", "owner_role": "Owner"},
+        data={"title": "R2 photo", "location": "Palwal", "price": 5000000, "owner_name": "John", "owner_role": "Owner"},
         files=[("photos", ("a.jpg", io.BytesIO(_jpeg_bytes()), "image/jpeg"))]
     )
     assert res.status_code == 200, res.text

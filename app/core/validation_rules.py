@@ -137,9 +137,6 @@ def validate_price(
     if price is None or price <= 0:
         return False, "Price must be a positive number greater than zero.", False, None
 
-    if price > INVALID_PRICE_MAX:
-        return False, f"Price exceeds the maximum allowable limit of ₹1,000 Crore.", False, None
-
     is_rent = str(for_what).lower() == "rent"
     prop_lower = str(prop_type).lower()
 

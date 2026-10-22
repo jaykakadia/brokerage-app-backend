@@ -107,11 +107,13 @@ class TestPriceValidation:
         assert not is_valid
         assert f"{int(INVALID_PRICE_MIN_RENT):,}" in err
 
-    def test_reject_above_absolute_maximum(self):
-        # 15,000 Crore -> absurd
-        is_valid, err, is_suspicious, warning = validate_price(150_000_000_000, "sale", "commercial")
-        assert not is_valid
-        assert "exceeds" in err.lower()
+    def test_above_200_cr_triggers_warning(self):
+        # 200 Cr and above -> warning/confirmation, not hard block
+        is_valid, err, is_suspicious, warning = validate_price(2_500_000_000, "sale", "commercial")
+        assert is_valid is True
+        assert is_suspicious is True
+        assert warning is not None
+        assert "exceptionally high" in warning.lower()
 
     def test_suspicious_rent_triggers_warning_not_reject(self):
         # Rent of 45 Lakh/month is suspicious but valid with warning
@@ -206,3 +208,136 @@ class TestApiValidationIntegration:
         res = client.post("/api/v1/listings", data=payload)
         assert res.status_code in (400, 422)
         assert "price" in res.text.lower()
+
+    def test_edit_price_zero_listing_without_touching_price(self, client, test_user, db_session):
+        client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+        from app.db.models.listing import Listing
+        l = Listing(
+            title="3 BHK Villa with Zero Price",
+            price=0.0,
+            location="Sector 2, Palwal",
+            owner_name="John Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale"}
+        )
+        db_session.add(l)
+        db_session.commit()
+        db_session.refresh(l)
+
+        res = client.patch(f"/api/v1/listings/{l.id}", data={"title": "Updated Villa Title", "description": "New description"})
+        assert res.status_code == 200, res.text
+        updated = client.get(f"/api/v1/listings/{l.id}").json()["data"]
+        assert updated["title"] == "Updated Villa Title"
+        assert updated["price"] == 0.0
+
+    def test_edit_price_zero_listing_with_valid_price(self, client, test_user, db_session):
+        client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+        from app.db.models.listing import Listing
+        l = Listing(
+            title="3 BHK Villa with Zero Price 2",
+            price=0.0,
+            location="Sector 2, Palwal",
+            owner_name="John Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale"}
+        )
+        db_session.add(l)
+        db_session.commit()
+        db_session.refresh(l)
+
+        res = client.patch(f"/api/v1/listings/{l.id}", data={"price": "5000000"})
+        assert res.status_code == 200, res.text
+        updated = client.get(f"/api/v1/listings/{l.id}").json()["data"]
+        assert updated["price"] == 5000000.0
+
+    def test_edit_listing_with_negative_price(self, client, test_user, db_session):
+        client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+        from app.db.models.listing import Listing
+        l = Listing(
+            title="3 BHK Villa for Negative Price Test",
+            price=4500000.0,
+            location="Sector 2, Palwal",
+            owner_name="John Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale"}
+        )
+        db_session.add(l)
+        db_session.commit()
+        db_session.refresh(l)
+
+        res = client.patch(f"/api/v1/listings/{l.id}", data={"price": "-5000"})
+        assert res.status_code in (400, 422)
+        assert "price" in res.text.lower()
+
+    def test_edit_500_cr_listing_without_touching_price(self, client, test_user, db_session):
+        client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
+        from app.db.models.listing import Listing
+        l = Listing(
+            title="Huge Land Parcel 500 Cr",
+            price=5_000_000_000.0,
+            location="Sector 2, Palwal",
+            owner_name="John Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale", "propType": "land"}
+        )
+        db_session.add(l)
+        db_session.commit()
+        db_session.refresh(l)
+
+        res = client.patch(f"/api/v1/listings/{l.id}", data={"title": "Updated 500 Cr Land Title"})
+        assert res.status_code == 200, res.text
+        updated = client.get(f"/api/v1/listings/{l.id}").json()["data"]
+        assert updated["title"] == "Updated 500 Cr Land Title"
+        assert updated["price"] == 5_000_000_000.0
+
+    def test_title_collision_adds_code_only_on_duplicate(self, db_session, test_user):
+        from app.db.models.listing import Listing
+        from app.routers.listing_pages import compute_listing_seo_title
+
+        l1 = Listing(
+            title="3 BHK Luxury Villa in Sector 2",
+            price=6500000.0,
+            location="Sector 2, Palwal",
+            owner_name="John Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale", "bhk": "3 BHK", "propType": "Villa"}
+        )
+        db_session.add(l1)
+        db_session.commit()
+        db_session.refresh(l1)
+
+        # Single approved listing with this title: no collision, no TC011P- code
+        title_single = compute_listing_seo_title(l1, db_session)
+        assert f"(TC011P-{l1.id})" not in title_single
+        assert "TradeCall India" in title_single
+
+        # Add second approved listing with exact same title
+        l2 = Listing(
+            title="3 BHK Luxury Villa in Sector 2",
+            price=6800000.0,
+            location="Sector 2, Palwal",
+            owner_name="Jane Doe",
+            owner_role="Owner",
+            status="approved",
+            user_id=test_user.id,
+            form_data={"locality": "Sector 2", "forWhat": "sale", "bhk": "3 BHK", "propType": "Villa"}
+        )
+        db_session.add(l2)
+        db_session.commit()
+        db_session.refresh(l2)
+
+        # Now both have collision, so TC011P-xxx code is added to differentiate
+        title_l1_coll = compute_listing_seo_title(l1, db_session)
+        title_l2_coll = compute_listing_seo_title(l2, db_session)
+        assert f"(TC011P-{l1.id})" in title_l1_coll
+        assert f"(TC011P-{l2.id})" in title_l2_coll
