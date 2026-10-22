@@ -411,7 +411,7 @@ def handle_catch_all_404(path: str, db: Session = Depends(get_db)):
         or clean_path.startswith("uploads/")
         or clean_path.startswith("static/")
         or clean_path.startswith("sitemap")
-        or clean_path in ("robots.txt", "favicon.ico", "favicon.png", "icon.jpeg")
+        or clean_path in ("robots.txt", "favicon.ico", "favicon.png", "icon.jpeg", "health")
         or any(clean_path.endswith(ext) for ext in [
             ".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico",
             ".woff", ".woff2", ".ttf", ".eot", ".map", ".json", ".xml", ".txt"

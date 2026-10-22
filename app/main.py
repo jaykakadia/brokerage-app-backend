@@ -85,10 +85,6 @@ app.include_router(legacy_router)
 app.include_router(public_pages_router)
 app.include_router(city_pages_router)
 app.include_router(listing_pages_router)
-# Catch-all router MUST be strictly at the very end
-app.include_router(catch_all_router)
-
-
 # 4. Standardized Error Handling
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -113,3 +109,7 @@ def health_check():
         "environment": settings.ENVIRONMENT,
         "version": "1.0.0"
     }
+
+
+# Catch-all router MUST be strictly at the very end
+app.include_router(catch_all_router)
