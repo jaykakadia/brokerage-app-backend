@@ -1,19 +1,22 @@
 import html as html_lib
 import json
 import re
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
-from app.routers.city_pages import load_base_index_html, set_or_replace_canonical
+from app.core.cities import slugify_city
+from app.routers.city_pages import load_base_index_html, set_or_replace_canonical, set_or_replace_meta
 from app.routers.sitemap import get_listing_path
 
 router = APIRouter(tags=["Listing Share Pages"])
 
 BASE_URL = "https://tradecall.in"
+
+KNOWN_DELETED_LISTING_IDS = {49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 93, 95, 96, 97, 172, 227}
 
 
 def parse_listing_id(raw_id: str) -> Optional[int]:
@@ -44,15 +47,13 @@ def format_price(val: Optional[float]) -> str:
 
 
 def clean_meta_description(text: str, max_len: int = 160) -> str:
-    """Truncates description cleanly at a word boundary without trailing commas or broken words."""
+    """Truncates description cleanly at a word boundary without trailing punctuation."""
     clean = re.sub(r"<[^>]*>", " ", text)
     clean = re.sub(r"\s+", " ", clean).strip()
     if len(clean) <= max_len:
         return clean
     truncated = clean[: max_len - 3]
-    # Remove partial trailing word
     truncated = re.sub(r"\s+\S*$", "", truncated).strip()
-    # Strip any dangling punctuation (commas, semicolons, dashes, periods)
     truncated = re.sub(r"[,;:\.\-\s]+$", "", truncated).strip()
     return f"{truncated}..."
 
@@ -63,7 +64,6 @@ def pick_og_image(images: list) -> str:
         return f"{BASE_URL}/og-image.png"
 
     chosen_fp = None
-    # 1. Prefer JPEG / PNG
     for img in images:
         fp = (getattr(img, "file_path", None) or "").strip()
         if not fp:
@@ -73,8 +73,7 @@ def pick_og_image(images: list) -> str:
             chosen_fp = fp
             break
 
-    # 2. Fall back to first available image (e.g. .webp)
-    if not chosen_fp and images[0].file_path:
+    if not chosen_fp and images and getattr(images[0], "file_path", None):
         chosen_fp = images[0].file_path.strip()
 
     if not chosen_fp:
@@ -88,22 +87,121 @@ def pick_og_image(images: list) -> str:
     return f"{BASE_URL}/uploads/{fp_clean}"
 
 
-def set_or_replace_meta(html: str, attr: str, key: str, content: str) -> str:
-    """Replaces existing <meta> tag or injects before </head> if missing."""
-    escaped_content = html_lib.escape(content, quote=True)
-    pattern = rf'<meta\s+{attr}=["\']{re.escape(key)}["\'][^>]*>'
-    if re.search(pattern, html, flags=re.IGNORECASE):
-        return re.sub(pattern, f'<meta {attr}="{key}" content="{escaped_content}" />', html, count=1, flags=re.IGNORECASE)
-    return html.replace("</head>", f'  <meta {attr}="{key}" content="{escaped_content}" />\n</head>')
+def build_410_html(base_html: str, message: str = "This listing has expired or has been permanently removed.") -> str:
+    """Builds a real 410 Gone response with noindex for deleted / non-approved listings."""
+    html = re.sub(
+        r"<title>.*?</title>",
+        "<title>Listing Removed (410) | TradeCall India</title>",
+        base_html,
+        count=1,
+        flags=re.DOTALL
+    )
+    html = set_or_replace_meta(html, "name", "robots", "noindex, follow")
+    html = re.sub(r'<link\b[^>]*\brel=["\']canonical["\'][^>]*>', '', html, flags=re.IGNORECASE)
+
+    rendered_root = f'''<div id="root">
+    <main class="ssr-410" style="padding: 40px 20px; text-align: center; font-family: sans-serif;">
+      <h1>Listing No Longer Available</h1>
+      <p>{message}</p>
+      <p><a href="/" style="color: #2563eb; text-decoration: underline;">Back to Homepage</a> | <a href="/cities" style="color: #2563eb; text-decoration: underline;">Explore Cities</a></p>
+    </main>
+  </div>'''
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', rendered_root, html, count=1, flags=re.DOTALL)
+    return html
 
 
-def build_listing_html(listing: Listing, base_html: str) -> str:
-    """Injects listing title, description, canonical, OG tags, and Schema.org JSON-LD."""
-    raw_title = listing.title.strip() if listing.title else "Property Listing"
-    headline = re.sub(r"\s*\|\s*Tradecall.*$", "", raw_title, flags=re.IGNORECASE).strip() or "Property Listing"
-    full_title = f"{headline} | Tradecall"
+def build_404_html(base_html: str) -> str:
+    """Builds a real 404 response with noindex for missing listings."""
+    html = re.sub(
+        r"<title>.*?</title>",
+        "<title>404 - Listing Not Found | TradeCall India</title>",
+        base_html,
+        count=1,
+        flags=re.DOTALL
+    )
+    html = set_or_replace_meta(html, "name", "robots", "noindex, follow")
+    html = re.sub(r'<link\b[^>]*\brel=["\']canonical["\'][^>]*>', '', html, flags=re.IGNORECASE)
+
+    rendered_root = '''<div id="root">
+    <main class="ssr-404" style="padding: 40px 20px; text-align: center; font-family: sans-serif;">
+      <h1>Listing Not Found</h1>
+      <p>The property listing you are looking for does not exist or may have been deleted.</p>
+      <p><a href="/" style="color: #2563eb; text-decoration: underline;">Back to Homepage</a> | <a href="/cities" style="color: #2563eb; text-decoration: underline;">Explore Cities</a></p>
+    </main>
+  </div>'''
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', rendered_root, html, count=1, flags=re.DOTALL)
+    return html
+
+
+def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
+    """
+    Injects unique title, meta description, canonical, OG tags,
+    BreadcrumbList + RealEstateListing/LocalBusiness JSON-LD, specs table, and similar listings.
+    """
+    form_data: Dict[str, Any] = listing.form_data if isinstance(listing.form_data, dict) else {}
+
+    # Determine listing location & city
+    city = form_data.get("city")
+    locality = form_data.get("locality")
+    if not city or not locality:
+        if listing.location:
+            parts = [p.strip() for p in listing.location.split(",") if p.strip()]
+            if len(parts) >= 3:
+                locality = locality or parts[0]
+                city = city or parts[-2]
+            elif len(parts) == 2:
+                locality = locality or parts[0]
+                city = city or parts[1]
+            elif len(parts) == 1:
+                city = city or parts[0]
+    city = city or "Palwal"
+    locality = locality or city
+    city_slug = slugify_city(city) or "palwal"
 
     price_str = format_price(float(listing.price)) if listing.price else ""
+
+    # Check if business listing or real estate
+    b_name = form_data.get("businessName")
+    is_business = False
+    if form_data.get("kind") == "business" or (b_name and not form_data.get("propType") and not listing.price):
+        is_business = True
+
+    cat_name = "Business"
+    if form_data.get("category"):
+        cat_name = str(form_data.get("category"))
+
+    if is_business:
+        # Business title: {Business Name} - {Category} in {City} | TradeCall India
+        full_title = f"{b_name or 'Business'} - {cat_name} in {city} | TradeCall India"
+        headline = f"{b_name or 'Business'} - {cat_name} in {city}"
+    else:
+        # Property title: {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price} | TradeCall India
+        bhk = form_data.get("bhk") or ""
+        area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
+        unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
+        size_part = bhk
+        if not size_part and area:
+            size_part = f"{area} {unit}".strip()
+
+        if not size_part and listing.title:
+            bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
+            if bhk_match:
+                size_part = bhk_match.group(1).upper()
+
+        prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
+        if prop_type == "Property" and listing.title:
+            for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
+                if pt.lower() in listing.title.lower():
+                    prop_type = pt
+                    break
+
+        for_what = (form_data.get("forWhat") or "sale").title()
+        type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
+        loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
+        price_clause = f" - {price_str}" if price_str else ""
+        full_title = f"{type_clause} for {for_what} {loc_clause}{price_clause} | TradeCall India"
+        headline = f"{type_clause} for {for_what} {loc_clause}"
+
     summary_parts = [p for p in [price_str, listing.location] if p]
     summary_str = " · ".join(summary_parts)
 
@@ -113,41 +211,121 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     if not clean_desc:
         clean_desc = "Verified property listing on TradeCall India with zero brokerage."
 
-    combined_desc = f"{summary_str}. {clean_desc} Contact the owner directly on TradeCall India, zero brokerage." if summary_str else f"{clean_desc} Contact the owner directly on TradeCall India, zero brokerage."
+    combined_desc = f"{summary_str}. {clean_desc} Contact verified owner directly on TradeCall India." if summary_str else f"{clean_desc} Contact verified owner directly on TradeCall India."
     meta_desc = clean_meta_description(combined_desc, max_len=160)
 
     canonical_path = get_listing_path(listing.id, listing.title, listing.location, listing.form_data)
     canonical_url = f"{BASE_URL}{canonical_path}"
-
     image_url = pick_og_image(listing.images or [])
 
-    # Prepare Schema.org JSON-LD
-    schema_data = {
+    # BreadcrumbList Schema
+    breadcrumbs_ld = {
         "@context": "https://schema.org",
-        "@type": "RealEstateListing",
-        "name": headline,
-        "description": meta_desc,
-        "url": canonical_url,
-        "image": [image_url],
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": f"{BASE_URL}/"
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": f"Properties in {city}",
+                "item": f"{BASE_URL}/properties/{city_slug}"
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": headline,
+                "item": canonical_url
+            }
+        ]
     }
-    if listing.price and float(listing.price) > 0:
-        schema_data["offers"] = {
-            "@type": "Offer",
-            "price": float(listing.price),
-            "priceCurrency": "INR"
-        }
 
-    schema_ld = f"""  <!-- RealEstateListing Schema -->
+    # Main Entity Schema (RealEstateListing or LocalBusiness)
+    if is_business:
+        entity_ld = {
+            "@context": "https://schema.org",
+            "@type": "LocalBusiness",
+            "name": headline,
+            "description": meta_desc,
+            "url": canonical_url,
+            "image": [image_url],
+            "address": {
+                "@type": "PostalAddress",
+                "addressLocality": city,
+                "addressRegion": "Haryana",
+                "addressCountry": "IN"
+            }
+        }
+    else:
+        entity_ld = {
+            "@context": "https://schema.org",
+            "@type": "RealEstateListing",
+            "name": headline,
+            "description": meta_desc,
+            "url": canonical_url,
+            "image": [image_url],
+        }
+        if listing.price and float(listing.price) > 0:
+            entity_ld["offers"] = {
+                "@type": "Offer",
+                "price": float(listing.price),
+                "priceCurrency": "INR"
+            }
+
+    schema_ld = f"""  <!-- Schemas: BreadcrumbList & Entity -->
   <script type="application/ld+json">
-{json.dumps(schema_data, indent=2)}
+{json.dumps(breadcrumbs_ld, indent=2)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(entity_ld, indent=2)}
   </script>"""
+
+    # Query 3-4 similar listings
+    similar = (
+        db.query(Listing)
+        .filter(Listing.status == "approved", Listing.id != listing.id)
+        .order_by(Listing.id.desc())
+        .limit(4)
+        .all()
+    )
+    similar_items = []
+    for s in similar:
+        s_path = get_listing_path(s.id, s.title, s.location, s.form_data)
+        s_p = format_price(float(s.price)) if s.price else ""
+        price_tag = f" ({s_p})" if s_p else ""
+        similar_items.append(f'<li><a href="{s_path}">{html_lib.escape(s.title or "Property Listing")}</a>{price_tag}</li>')
+    similar_html = "\n            ".join(similar_items)
+
+    # Specification table from form_data
+    specs = []
+    if form_data.get("propType"):
+        specs.append(f'<tr><th>Property Type</th><td>{html_lib.escape(str(form_data.get("propType")).title())}</td></tr>')
+    if form_data.get("bhk"):
+        specs.append(f'<tr><th>Configuration</th><td>{html_lib.escape(str(form_data.get("bhk")))}</td></tr>')
+    if form_data.get("area"):
+        specs.append(f'<tr><th>Area</th><td>{html_lib.escape(str(form_data.get("area")))} {html_lib.escape(str(form_data.get("unit", "")))}</td></tr>')
+    if form_data.get("furnish"):
+        specs.append(f'<tr><th>Furnishing</th><td>{html_lib.escape(str(form_data.get("furnish")))}</td></tr>')
+    if form_data.get("facing"):
+        specs.append(f'<tr><th>Facing</th><td>{html_lib.escape(str(form_data.get("facing")))}</td></tr>')
+    if price_str:
+        specs.append(f'<tr><th>Price</th><td>{html_lib.escape(price_str)}</td></tr>')
+    if locality:
+        specs.append(f'<tr><th>Locality</th><td>{html_lib.escape(locality)}</td></tr>')
+    if city:
+        specs.append(f'<tr><th>City</th><td>{html_lib.escape(city)}</td></tr>')
+    specs_html = "\n            ".join(specs)
 
     html = base_html
 
-    # 1. Title (single in-place replacement)
+    # 1. Title
     html = re.sub(r"<title>.*?</title>", f"<title>{html_lib.escape(full_title)}</title>", html, count=1, flags=re.DOTALL)
 
-    # 2. Meta description (single in-place replacement)
+    # 2. Meta description
     escaped_desc = html_lib.escape(meta_desc, quote=True)
     if re.search(r'<meta\s+name=["\']description["\']', html):
         html = re.sub(
@@ -159,25 +337,15 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     else:
         html = html.replace("</head>", f'  <meta name="description" content="{escaped_desc}" />\n</head>')
 
-    # 3. Canonical (self-referencing to canonical listing URL, guaranteed exactly one)
+    # 3. Canonical
     html = set_or_replace_canonical(html, canonical_url)
 
-    # 4. Robots meta tag (noindex if not approved)
+    # 4. Robots
     robots_content = "index, follow" if listing.status == "approved" else "noindex, follow"
-    if re.search(r'<meta\s+name=["\']robots["\']', html):
-        html = re.sub(
-            r'<meta\s+name=["\']robots["\']\s+content=["\'][^"\']*["\']\s*/?>',
-            f'<meta name="robots" content="{robots_content}" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", f'  <meta name="robots" content="{robots_content}" />\n</head>')
+    html = set_or_replace_meta(html, "name", "robots", robots_content)
 
-    # 5. OpenGraph and Twitter tags
-    # Remove hardcoded 1200x630 dimension tags
+    # 5. OG and Twitter tags
     html = re.sub(r'\s*<meta\s+property=["\']og:image:(?:width|height)["\'][^>]*>', '', html)
-
     html = set_or_replace_meta(html, "property", "og:type", "website")
     html = set_or_replace_meta(html, "property", "og:title", headline)
     html = set_or_replace_meta(html, "property", "og:description", meta_desc)
@@ -190,87 +358,107 @@ def build_listing_html(listing: Listing, base_html: str) -> str:
     html = set_or_replace_meta(html, "name", "twitter:image", image_url)
     html = set_or_replace_meta(html, "name", "twitter:image:alt", headline)
 
-    # 6. Inject Schema.org JSON-LD before </head>
+    # 6. JSON-LD Schemas
     html = html.replace("</head>", f"{schema_ld}\n</head>")
 
-    # 7. Inject real, HTML-escaped content inside <div id="root">
+    # 7. Real HTML body inside <div id="root">
     escaped_headline = html_lib.escape(headline)
     escaped_price = html_lib.escape(price_str)
-    escaped_loc = html_lib.escape(listing.location or "")
+    escaped_loc = html_lib.escape(listing.location or f"{locality}, {city}")
     escaped_desc_body = html_lib.escape(clean_desc)
     escaped_img_src = html_lib.escape(image_url, quote=True)
 
-    root_parts = [
-        f"<h1>{escaped_headline}</h1>"
-    ]
-    if escaped_price:
-        root_parts.append(f'<p class="listing-price">{escaped_price}</p>')
-    if escaped_loc:
-        root_parts.append(f'<p class="listing-location">{escaped_loc}</p>')
-    if image_url:
-        root_parts.append(f'<img src="{escaped_img_src}" alt="{escaped_headline}" />')
-    if escaped_desc_body:
-        root_parts.append(f'<p class="listing-description">{escaped_desc_body}</p>')
-
-    root_inner_html = "\n      ".join(root_parts)
-    rendered_root = f'<div id="root">\n    <article class="listing-ssr-preview" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">\n      {root_inner_html}\n    </article>\n  </div>'
+    rendered_root = f'''<div id="root">
+    <article class="listing-ssr-preview" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <nav aria-label="Breadcrumb" class="breadcrumbs">
+        <a href="/">Home</a> &gt; <a href="/properties/{city_slug}">Properties in {html_lib.escape(city)}</a> &gt; <span>{escaped_headline}</span>
+      </nav>
+      <h1>{escaped_headline}</h1>
+      <p class="listing-price">{escaped_price}</p>
+      <p class="listing-location">{escaped_loc}</p>
+      <img src="{escaped_img_src}" alt="{escaped_headline}" />
+      <p class="listing-description">{escaped_desc_body}</p>
+      <table class="listing-specs-table">
+        <tbody>
+          {specs_html}
+        </tbody>
+      </table>
+      <section class="similar-listings-section">
+        <h2>Similar Properties in {html_lib.escape(city)}</h2>
+        <ul>
+          {similar_html}
+        </ul>
+      </section>
+    </article>
+  </div>'''
 
     html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', rendered_root, html, count=1, flags=re.DOTALL)
-
-    return html
-
-
-def build_404_html(base_html: str) -> str:
-    """Builds a real 404 response with noindex for missing listings."""
-    html = re.sub(
-        r"<title>.*?</title>",
-        "<title>404 - Listing Not Found | Tradecall</title>",
-        base_html,
-        count=1,
-        flags=re.DOTALL
-    )
-    if re.search(r'<meta\s+name=["\']robots["\']', html):
-        html = re.sub(
-            r'<meta\s+name=["\']robots["\']\s+content=["\'][^"\']*["\']\s*/?>',
-            '<meta name="robots" content="noindex, follow" />',
-            html,
-            count=1
-        )
-    else:
-        html = html.replace("</head>", '  <meta name="robots" content="noindex, follow" />\n</head>')
     return html
 
 
 @router.api_route("/listing/{listing_id}", methods=["GET", "HEAD"], response_class=HTMLResponse)
-def get_listing_page_by_id(listing_id: str, db: Session = Depends(get_db)):
+def get_listing_page_by_id(listing_id: str, request: Request, db: Session = Depends(get_db)):
     base_html = load_base_index_html()
     numeric_id = parse_listing_id(listing_id)
-    if not numeric_id:
-        return HTMLResponse(content=build_404_html(base_html), status_code=status.HTTP_404_NOT_FOUND)
+
+    # 1. ID in known deleted set -> 410 + noindex
+    if not numeric_id or numeric_id in KNOWN_DELETED_LISTING_IDS:
+        return HTMLResponse(content=build_410_html(base_html), status_code=status.HTTP_410_GONE)
 
     listing = db.query(Listing).filter(Listing.id == numeric_id).first()
+    # 2. Listing not found -> 404 + noindex
     if not listing:
         return HTMLResponse(content=build_404_html(base_html), status_code=status.HTTP_404_NOT_FOUND)
 
-    rendered_html = build_listing_html(listing, base_html)
+    # 3. status != "approved" -> 410 + noindex
+    if listing.status != "approved":
+        return HTMLResponse(content=build_410_html(base_html), status_code=status.HTTP_410_GONE)
+
+    # 4. Compare request path with canonical_path; redirect if different
+    canonical_path = get_listing_path(listing.id, listing.title, listing.location, listing.form_data)
+    req_path = request.url.path.rstrip("/").lower()
+    canon_path = canonical_path.rstrip("/").lower()
+    if req_path != canon_path:
+        target_url = f"https://tradecall.in{canonical_path}"
+        return RedirectResponse(url=target_url, status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+    rendered_html = build_listing_html(listing, base_html, db)
     return HTMLResponse(content=rendered_html, status_code=status.HTTP_200_OK)
 
 
 @router.api_route("/{city_slug}/{title_slug}/{unique_code}", methods=["GET", "HEAD"], response_class=HTMLResponse)
-def get_listing_page_by_slug(city_slug: str, title_slug: str, unique_code: str, db: Session = Depends(get_db)):
-    # Guard against non-listing routes (API endpoints, static assets, docs)
-    if city_slug.lower() in {"api", "uploads", "assets", "static", "docs", "redoc", "openapi.json"}:
+def get_listing_page_by_slug(city_slug: str, title_slug: str, unique_code: str, request: Request, db: Session = Depends(get_db)):
+    # Guard against non-listing routes
+    if city_slug.lower() in {
+        "api", "uploads", "assets", "static", "docs", "redoc", "openapi.json",
+        "sitemap", "properties", "pages", "blog", "search", "about", "contact",
+        "cities", "business-directory", "privacy", "terms-of-use", "advertise", "post-listing"
+    }:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
-    numeric_id = parse_listing_id(unique_code)
-    if not numeric_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid listing code")
-
     base_html = load_base_index_html()
+    numeric_id = parse_listing_id(unique_code)
+
+    # 1. ID in known deleted set -> 410 + noindex
+    if not numeric_id or numeric_id in KNOWN_DELETED_LISTING_IDS:
+        return HTMLResponse(content=build_410_html(base_html), status_code=status.HTTP_410_GONE)
 
     listing = db.query(Listing).filter(Listing.id == numeric_id).first()
+    # 2. Listing not found -> 404 + noindex
     if not listing:
         return HTMLResponse(content=build_404_html(base_html), status_code=status.HTTP_404_NOT_FOUND)
 
-    rendered_html = build_listing_html(listing, base_html)
+    # 3. status != "approved" -> 410 + noindex
+    if listing.status != "approved":
+        return HTMLResponse(content=build_410_html(base_html), status_code=status.HTTP_410_GONE)
+
+    # 4. Compare request path with canonical_path; redirect if different
+    canonical_path = get_listing_path(listing.id, listing.title, listing.location, listing.form_data)
+    req_path = request.url.path.rstrip("/").lower()
+    canon_path = canonical_path.rstrip("/").lower()
+    if req_path != canon_path:
+        target_url = f"https://tradecall.in{canonical_path}"
+        return RedirectResponse(url=target_url, status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+    rendered_html = build_listing_html(listing, base_html, db)
     return HTMLResponse(content=rendered_html, status_code=status.HTTP_200_OK)

@@ -21,6 +21,8 @@ from app.routers.blogs import router as blogs_router
 from app.routers.enquiries import router as enquiries_router
 from app.routers.settings import router as settings_router, public_router as public_settings_router
 from app.routers.sitemap import router as sitemap_router
+from app.routers.legacy_redirects import router as legacy_redirects_router
+from app.routers.public_pages import router as public_pages_router, catch_all_router
 from app.routers.city_pages import router as city_pages_router
 from app.routers.listing_pages import router as listing_pages_router
 from app.routers.legacy_compat import router as legacy_router
@@ -48,8 +50,11 @@ app.add_middleware(
 @app.middleware("http")
 async def add_x_robots_tag_middleware(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api"):
+    path = request.url.path.lower()
+    if path.startswith("/api"):
         response.headers["X-Robots-Tag"] = "noindex"
+    elif any(path.startswith(p) for p in ["/admin", "/adminpanel", "/admin-panel", "/admin-login", "/dashboard", "/account", "/login", "/register"]):
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
 # 2. Static File Serving for Uploaded Assets
@@ -57,7 +62,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "listings"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
-# 3. Include API Routers
+# 3. Include Routers
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(listings_router)
@@ -75,9 +80,13 @@ app.include_router(page_metadata_router)
 app.include_router(settings_router)
 app.include_router(public_settings_router)
 app.include_router(sitemap_router)
+app.include_router(legacy_redirects_router)
+app.include_router(legacy_router)
+app.include_router(public_pages_router)
 app.include_router(city_pages_router)
 app.include_router(listing_pages_router)
-app.include_router(legacy_router)
+# Catch-all router MUST be strictly at the very end
+app.include_router(catch_all_router)
 
 
 # 4. Standardized Error Handling

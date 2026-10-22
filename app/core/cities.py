@@ -4,6 +4,9 @@ import json
 from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 
+# Minimum approved listings required for a city hub to be indexable and included in sitemap-hubs
+MIN_HUB_LISTINGS: int = 5
+
 # Top Cities matching the frontend TOP_CITIES
 TOP_CITIES: List[Dict[str, str]] = [
     {"name": "Mumbai", "slug": "mumbai", "state": "Maharashtra"},
