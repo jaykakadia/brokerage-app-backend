@@ -269,7 +269,34 @@ def get_home_page(db: Session = Depends(get_db)):
     html = set_or_replace_meta(html, "name", "twitter:title", title)
     html = set_or_replace_meta(html, "name", "twitter:description", description)
 
-    # 5. Schema.org Organization + WebSite
+    # 5. Schema.org Organization + WebSite + FAQPage
+    homepage_faqs = [
+        {
+            "question": "How does TradeCall India ensure zero brokerage on property transactions?",
+            "answer": "TradeCall India directly connects verified property owners, buyers, and tenants without intermediaries. You get direct contact access to genuine owners and sellers without paying any brokerage or commission."
+        },
+        {
+            "question": "How are property listings verified on TradeCall India?",
+            "answer": "Every listing undergoes an initial verification process checking owner contact details, property specifics, and photos. Verified listings are marked with our verified badge after confirming details with the owner."
+        },
+        {
+            "question": "Can I list my property for free on TradeCall India?",
+            "answer": "Yes, genuine owners and individuals can post their property for sale or rent completely free of charge. You can list residential flats, houses, plots, agricultural land, or commercial properties."
+        },
+        {
+            "question": "What types of properties can I find in Palwal and NCR on TradeCall India?",
+            "answer": "You can find residential apartments, builder floors, independent houses, residential plots, commercial shops, office spaces, and agricultural or industrial land across Palwal, Faridabad, Gurugram, and neighboring NCR corridors."
+        },
+        {
+            "question": "How do I contact property owners or local businesses on TradeCall India?",
+            "answer": "Each property and business listing features direct call and WhatsApp buttons. Once you click to reveal contact details, you can speak or chat directly with the owner or business representative."
+        },
+        {
+            "question": "Where is TradeCall India located and how can I get support?",
+            "answer": "TradeCall India is based in Village Joharkhera, PO Mandkola, Palwal, Haryana 121102. For customer assistance, you can call or WhatsApp our support desk at +91 9992292828."
+        }
+    ]
+
     org_schema = {
         "@context": "https://schema.org",
         "@graph": [
@@ -294,6 +321,21 @@ def get_home_page(db: Session = Depends(get_db)):
                 "url": BASE_URL,
                 "name": "TradeCall India",
                 "publisher": {"@id": f"{BASE_URL}/#organization"}
+            },
+            {
+                "@type": "FAQPage",
+                "@id": f"{BASE_URL}/#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": f["question"],
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": f["answer"]
+                        }
+                    }
+                    for f in homepage_faqs
+                ]
             }
         ]
     }
@@ -324,17 +366,28 @@ def get_home_page(db: Session = Depends(get_db)):
         latest_items.append(f'<li><a href="{l_path}">{html_lib.escape(l.title or "Property")}</a>{price_tag} in {html_lib.escape(l.location or "NCR")}</li>')
     latest_markup = "\n            ".join(latest_items)
 
-    verification_note = "All listings on TradeCall India are verified directly with property owners and local associates to ensure genuine, zero-brokerage deals across Palwal, Faridabad, and Delhi NCR."
+    faq_markup = "\n".join(
+        f'          <dt style="font-weight: 700; margin-top: 12px;">{html_lib.escape(f["question"])}</dt>\n'
+        f'          <dd style="margin-left: 0; margin-bottom: 8px; color: #4b5563;">{html_lib.escape(f["answer"])}</dd>'
+        for f in homepage_faqs
+    )
+
+    verification_note = "All listings on TradeCall India undergo seller contact verification and quality review to ensure authentic, zero-brokerage deals across Palwal, Faridabad, and Delhi NCR corridor."
 
     root_ssr = f"""<div id="root">
     <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
       <header>
         <h1>{h1_text}</h1>
         <p>{description}</p>
-        <p class="verification-note"><strong>Verification Guarantee:</strong> {verification_note}</p>
+        <section class="verification-policy" style="margin-top: 16px;">
+          <h2>Verification Policy & Direct Contact Guarantee</h2>
+          <p>{verification_note}</p>
+          <p><strong>Customer Assistance & WhatsApp:</strong> <a href="tel:+919992292828">+91 9992292828</a></p>
+          <p><strong>Registered Office:</strong> Village Joharkhera, PO Mandkola, Palwal, Haryana 121102</p>
+        </section>
       </header>
       <section>
-        <h2>Indexable City Hubs</h2>
+        <h2>Indexable City Real Estate Hubs</h2>
         <nav aria-label="City Hubs">
           <ul>
 {hub_links}
@@ -342,14 +395,20 @@ def get_home_page(db: Session = Depends(get_db)):
         </nav>
       </section>
       <section>
-        <h2>Explore Property Types</h2>
+        <h2>Explore Property Types in Palwal & NCR</h2>
         <ul>
-          <li>Residential Apartments & Builder Floors</li>
-          <li>Independent Houses & Villas</li>
-          <li>Commercial Shops & Office Spaces</li>
-          <li>Industrial Plots & Sheds</li>
-          <li>Agricultural Land & Farmhouses</li>
+          <li><a href="/properties/palwal">Residential Flats & Builder Floors</a></li>
+          <li><a href="/properties/palwal">Independent Houses & Villas</a></li>
+          <li><a href="/properties/palwal">Commercial Shops & Office Spaces</a></li>
+          <li><a href="/properties/palwal">Industrial Plots & Land</a></li>
+          <li><a href="/properties/palwal">Agricultural Land & Farmhouses</a></li>
         </ul>
+      </section>
+      <section>
+        <h2>Frequently Asked Questions (FAQ)</h2>
+        <dl>
+{faq_markup}
+        </dl>
       </section>
       <section>
         <h2>Latest Verified Property Listings</h2>
@@ -551,10 +610,80 @@ def get_city_properties_page(
           </ul>
         </nav>"""
 
-    # Price summary formatted strings
+    # Price summary formatted strings & conditional price guide
+    price_count = len([l for l in matched_listings if l.price and float(l.price) > 0])
+    has_enough_price_data = price_count >= 5
+
     min_p_str = format_price(price_stats["min"]) or "N/A"
     med_p_str = format_price(price_stats["median"]) or "N/A"
     max_p_str = format_price(price_stats["max"]) or "N/A"
+
+    price_guide_html = f"""<div class="city-price-summary">
+          <p><strong>Price Guide for {html_lib.escape(city_name)}:</strong> Starting from {min_p_str} up to {max_p_str} (Median: {med_p_str})</p>
+        </div>""" if has_enough_price_data else ""
+
+    # Real data City FAQs
+    popular_loc_str = ", ".join(sorted_localities[:5]) if sorted_localities else "prime residential sectors"
+    if has_enough_price_data:
+        q1_ans = f"In {city_name}, verified property listings currently range from {min_p_str} up to {max_p_str}, with a median listing price of approximately {med_p_str}."
+    else:
+        q1_ans = f"Property prices in {city_name} vary across property types. Explore individual verified listings on TradeCall India for genuine owner pricing."
+
+    city_faqs = [
+        {
+            "question": f"What are property prices like in {city_name} on TradeCall India?",
+            "answer": q1_ans
+        },
+        {
+            "question": f"Can I buy or rent property in {city_name} with zero brokerage?",
+            "answer": f"Yes, all property listings in {city_name} on TradeCall India connect you directly with genuine owners and verified sellers with zero brokerage commission."
+        },
+        {
+            "question": f"Which are the most popular localities in {city_name}?",
+            "answer": f"Popular residential and commercial localities in {city_name} include {popular_loc_str}. Explore verified listings across these areas on TradeCall India."
+        },
+        {
+            "question": f"How can I list my property in {city_name} for sale or rent?",
+            "answer": f"Property owners can list free of charge in {city_name} on TradeCall India. Click 'Post Property', select {city_name}, and enter your property dimensions, photos, and contact info."
+        },
+        {
+            "question": f"How does TradeCall India verify listings in {city_name}?",
+            "answer": f"TradeCall India verifies owner contact numbers and reviews property photos and descriptions to maintain genuine listings across {city_name}."
+        }
+    ]
+
+    city_faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": f["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": f["answer"]
+                }
+            }
+            for f in city_faqs
+        ]
+    }
+
+    schemas_code = f"""  <!-- Breadcrumbs, ItemList & FAQPage Schemas -->
+  <script type="application/ld+json">
+{json.dumps(breadcrumb_ld, indent=2)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(item_list_ld, indent=2)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(city_faq_ld, indent=2)}
+  </script>"""
+
+    city_faq_markup = "\n".join(
+        f'          <dt style="font-weight: 700; margin-top: 10px;">{html_lib.escape(f["question"])}</dt>\n'
+        f'          <dd style="margin-left: 0; margin-bottom: 8px; color: #4b5563;">{html_lib.escape(f["answer"])}</dd>'
+        for f in city_faqs
+    )
 
     if has_listings:
         items = []
@@ -571,9 +700,7 @@ def get_city_properties_page(
     <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
       <main class="city-ssr-wrap">
         <h1>Properties in {html_lib.escape(city_name)}{page_suffix}</h1>
-        <div class="city-price-summary">
-          <p><strong>Price Summary:</strong> Min: {min_p_str} | Median: {med_p_str} | Max: {max_p_str}</p>
-        </div>
+        {price_guide_html}
         <div class="city-intro-copy">
           <p>{html_lib.escape(intro_copy).replace(chr(10)+chr(10), '</p><p>')}</p>
         </div>
@@ -583,6 +710,16 @@ def get_city_properties_page(
             {localities_markup}
           </ul>
         </section>
+        <section class="city-types-section">
+          <h2>Property Types in {html_lib.escape(city_name)}</h2>
+          <ul>
+            <li>Residential Apartments & Flats in {html_lib.escape(city_name)}</li>
+            <li>Independent Houses & Villas in {html_lib.escape(city_name)}</li>
+            <li>Plots & Residential Land in {html_lib.escape(city_name)}</li>
+            <li>Commercial Shops & Offices in {html_lib.escape(city_name)}</li>
+            <li>Agricultural Land & Farmland in {html_lib.escape(city_name)}</li>
+          </ul>
+        </section>
         <section class="city-listings-section">
           <h2>Verified Listings in {html_lib.escape(city_name)} (Showing {len(current_page_listings)} of {total_listings})</h2>
           <ul class="city-listings-links">
@@ -590,6 +727,12 @@ def get_city_properties_page(
           </ul>
         </section>
         {pagination_nav}
+        <section class="city-faq-section" style="margin-top: 24px;">
+          <h2>Frequently Asked Questions about Property in {html_lib.escape(city_name)}</h2>
+          <dl>
+{city_faq_markup}
+          </dl>
+        </section>
       </main>
     </div>
   </div>"""

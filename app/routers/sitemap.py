@@ -12,6 +12,7 @@ from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.db.models.blog import Blog
 from app.core.cities import MIN_HUB_LISTINGS, slugify_city, get_city_display_name
+from app.core.validation_rules import is_buyer_requirement, is_thin_business
 
 router = APIRouter(tags=["Sitemap"])
 
@@ -151,14 +152,20 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
 
 def get_listings_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
     listings = (
-        db.query(Listing.id, Listing.title, Listing.description, Listing.location, Listing.form_data, Listing.updated_at, Listing.created_at)
+        db.query(Listing)
         .filter(Listing.status == "approved")
         .order_by(Listing.id.desc())
         .all()
     )
     items: List[Dict[str, Optional[str]]] = []
     for l in listings:
+        # Rule: Exclude buyer requirement posts and junk localities
         if is_buyer_post_or_junk(l.title, l.description, l.location):
+            continue
+        if is_buyer_requirement(l.title, l.form_data):
+            continue
+        # Rule: Exclude thin business pages (no description and no useful details)
+        if is_thin_business(l):
             continue
         path = get_listing_path(l.id, l.title, l.location, l.form_data)
         date_str = _format_date(l.updated_at or l.created_at)

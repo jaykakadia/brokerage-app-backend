@@ -18,6 +18,7 @@ from app.schemas.listing import (
 from app.services.storage_service import storage_service
 from app.services.listing_assignment import assign_listing_to_email
 from app.services.mail_service import mail_service
+from app.core.validation_rules import validate_locality, validate_price, clean_and_normalize_locality
 
 router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
@@ -274,6 +275,40 @@ async def create_listing(
         except Exception:
             parsed_form_data = form_data
 
+    # Form validation for property listings (locality and price cannot be bypassed via API)
+    is_biz = False
+    if isinstance(parsed_form_data, dict):
+        is_biz = parsed_form_data.get("kind") == "business" or bool(
+            parsed_form_data.get("businessName") and not parsed_form_data.get("propType")
+        )
+
+    if not is_biz:
+        # Locality validation
+        loc_to_check = None
+        if isinstance(parsed_form_data, dict) and parsed_form_data.get("locality"):
+            loc_to_check = str(parsed_form_data["locality"]).strip()
+        elif location:
+            loc_to_check = location.split(",")[0].strip()
+
+        if loc_to_check:
+            is_valid_loc, loc_err = validate_locality(loc_to_check)
+            if not is_valid_loc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=loc_err)
+            norm_loc = clean_and_normalize_locality(loc_to_check)
+            if isinstance(parsed_form_data, dict) and "locality" in parsed_form_data:
+                parsed_form_data["locality"] = norm_loc
+
+        # Price validation
+        for_what = "sale"
+        prop_type = ""
+        if isinstance(parsed_form_data, dict):
+            for_what = parsed_form_data.get("forWhat", "sale")
+            prop_type = parsed_form_data.get("propType", "")
+
+        is_valid_p, p_err, is_suspicious, p_warn = validate_price(price, for_what=for_what, prop_type=prop_type)
+        if not is_valid_p:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=p_err)
+
     # Validate uploaded photos upfront
     for photo in photos[:10]:
         if photo.filename:
@@ -451,6 +486,28 @@ async def update_listing(
             listing.form_data = json.loads(form_data)
         except ValueError:
             raise HTTPException(status_code=400, detail="form_data must be valid JSON.")
+
+    # Property listings validation on update
+    fd_check = listing.form_data if isinstance(listing.form_data, dict) else {}
+    is_biz = fd_check.get("kind") == "business" or bool(fd_check.get("businessName") and not fd_check.get("propType"))
+
+    if not is_biz:
+        if location is not None or form_data is not None:
+            loc_check = fd_check.get("locality") or (listing.location.split(",")[0].strip() if listing.location else "")
+            if loc_check:
+                is_valid_loc, loc_err = validate_locality(loc_check)
+                if not is_valid_loc:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=loc_err)
+                norm_loc = clean_and_normalize_locality(loc_check)
+                if isinstance(listing.form_data, dict) and "locality" in listing.form_data:
+                    listing.form_data["locality"] = norm_loc
+
+        if price is not None:
+            for_what = fd_check.get("forWhat", "sale")
+            prop_type = fd_check.get("propType", "")
+            is_valid_p, p_err, is_suspicious, p_warn = validate_price(listing.price, for_what=for_what, prop_type=prop_type)
+            if not is_valid_p:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=p_err)
 
     removed_files: List[str] = []
     if remove_image_ids:

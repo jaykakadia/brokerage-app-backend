@@ -163,7 +163,6 @@ def get_contact_page():
       <section>
         <h2>Get In Touch</h2>
         <p><strong>Phone / WhatsApp:</strong> <a href="tel:{PHONE}">{PHONE}</a></p>
-        <p><strong>Email:</strong> support@tradecall.in</p>
         <p><strong>Office Address:</strong> {ADDRESS}</p>
       </section>
       <nav><a href="/">Home</a> | <a href="/about">About Us</a> | <a href="/cities">Property Hubs</a></nav>

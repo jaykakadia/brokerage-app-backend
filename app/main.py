@@ -85,10 +85,12 @@ app.include_router(legacy_router)
 app.include_router(public_pages_router)
 app.include_router(city_pages_router)
 app.include_router(listing_pages_router)
+from fastapi.encoders import jsonable_encoder
+
 # 4. Standardized Error Handling
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    errors = exc.errors()
+    errors = jsonable_encoder(exc.errors())
     msg = errors[0].get("msg") if errors else "Validation error"
     field = errors[0].get("loc", [""])[-1] if errors else ""
     return JSONResponse(
