@@ -31,3 +31,12 @@ class SignupGuideSettings(BaseModel):
     """Help links shown on the Create Account screen."""
     blog_url: str = ""
     video_url: str = ""
+
+
+class SocialLinksSettings(BaseModel):
+    """Social media links shown in the website footer."""
+    facebook_url: str = ""
+    instagram_url: str = ""
+    youtube_url: str = ""
+    whatsapp_number: str = ""
+    support_email: str = ""

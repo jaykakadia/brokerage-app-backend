@@ -5,13 +5,97 @@ from app.core.dependencies import get_current_admin, get_db
 from app.db.models.user import User
 from app.db.models.setting import SystemSetting
 from app.schemas.common import APIResponse, MessageResponse
-from app.schemas.setting import MailSettingsRead, MailSettingsUpdate, TestMailRequest, SignupGuideSettings
+from app.schemas.setting import (
+    MailSettingsRead, MailSettingsUpdate, TestMailRequest, SignupGuideSettings, SocialLinksSettings
+)
 from app.services.mail_service import mail_service
 
 router = APIRouter(prefix="/api/v1/admin/settings", tags=["Admin Settings"])
 public_router = APIRouter(prefix="/api/v1/settings", tags=["Public Settings"])
 
 SIGNUP_GUIDE_KEYS = {"blog_url": "signup_guide_blog_url", "video_url": "signup_guide_video_url"}
+
+SOCIAL_LINKS_KEYS = {
+    "facebook_url": "social_facebook_url",
+    "instagram_url": "social_instagram_url",
+    "youtube_url": "social_youtube_url",
+    "whatsapp_number": "footer_whatsapp_number",
+    "support_email": "footer_support_email",
+}
+
+DEFAULT_SOCIAL_LINKS = {
+    "facebook_url": "https://facebook.com",
+    "instagram_url": "https://instagram.com",
+    "youtube_url": "https://youtube.com",
+    "whatsapp_number": "9992292828",
+    "support_email": "support.tradecall@gmail.com",
+}
+
+
+def _read_social_links(db: Session) -> SocialLinksSettings:
+    rows = db.query(SystemSetting).filter(SystemSetting.key.in_(SOCIAL_LINKS_KEYS.values())).all()
+    values = {row.key: row.value for row in rows}
+    return SocialLinksSettings(
+        facebook_url=values.get(SOCIAL_LINKS_KEYS["facebook_url"]) or DEFAULT_SOCIAL_LINKS["facebook_url"],
+        instagram_url=values.get(SOCIAL_LINKS_KEYS["instagram_url"]) or DEFAULT_SOCIAL_LINKS["instagram_url"],
+        youtube_url=values.get(SOCIAL_LINKS_KEYS["youtube_url"]) or DEFAULT_SOCIAL_LINKS["youtube_url"],
+        whatsapp_number=values.get(SOCIAL_LINKS_KEYS["whatsapp_number"]) or DEFAULT_SOCIAL_LINKS["whatsapp_number"],
+        support_email=values.get(SOCIAL_LINKS_KEYS["support_email"]) or DEFAULT_SOCIAL_LINKS["support_email"],
+    )
+
+
+@public_router.get("/social-links", response_model=APIResponse[SocialLinksSettings])
+def get_public_social_links(db: Session = Depends(get_db)):
+    """Public endpoint: social links and contact info shown in the website footer."""
+    return APIResponse(status="success", data=_read_social_links(db))
+
+
+@router.get("/social-links", response_model=APIResponse[SocialLinksSettings])
+def get_social_links(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin endpoint to view social links and contact info."""
+    return APIResponse(status="success", data=_read_social_links(db))
+
+
+@router.post("/social-links", response_model=APIResponse[SocialLinksSettings])
+def save_social_links(
+    req: SocialLinksSettings,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin endpoint to update social links and footer contact details."""
+    def _normalize_url(val: str) -> str:
+        s = val.strip()
+        if not s:
+            return ""
+        if not s.lower().startswith(("http://", "https://")):
+            return "https://" + s
+        return s
+
+    cleaned = {
+        "facebook_url": _normalize_url(req.facebook_url),
+        "instagram_url": _normalize_url(req.instagram_url),
+        "youtube_url": _normalize_url(req.youtube_url),
+        "whatsapp_number": req.whatsapp_number.strip(),
+        "support_email": req.support_email.strip().lower(),
+    }
+
+    for field, key in SOCIAL_LINKS_KEYS.items():
+        val = cleaned[field]
+        row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(SystemSetting(key=key, value=val, is_encrypted=False))
+
+    db.commit()
+    return APIResponse(
+        status="success",
+        message="Social and footer links updated successfully.",
+        data=_read_social_links(db)
+    )
 
 
 def _read_signup_guide(db: Session) -> SignupGuideSettings:
