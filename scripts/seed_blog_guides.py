@@ -1,6 +1,7 @@
 """
 Seed 6 factual, comprehensive, legally accurate real estate guides for TradeCall India.
 Covers DTCP, Jamabandi, Section 7A, stamp duty slabs, circle rates, and top NCR localities.
+Updated with official Haryana Revenue Department stamp duty rates and Income-tax Act, 2025 (Section 393(1) & Form 141 Schedule B).
 """
 import os
 import sys
@@ -22,31 +23,36 @@ GUIDES = [
         "author": "TradeCall Legal & Research Team",
         "tags": "plot approvals, haryana registry, jamabandi, dtcp haryana, section 7a, land verification",
         "content": """<article class="guide-article">
-  <p class="guide-lead">Purchasing a residential plot or agricultural land in Haryana offers high appreciation potential, but verifying approvals and revenue records before paying any token money (bayana) is essential to safeguard your investment.</p>
+  <p class="guide-lead">Purchasing a residential plot or agricultural land in Haryana requires thorough verification of statutory town planning approvals and revenue records before entering into an agreement to sell or transferring earnest money (bayana).</p>
 
   <h2>1. Verify DTCP Approval and License Status</h2>
-  <p>The Directorate of Town and Country Planning (DTCP) Haryana regulates urban development across the state. Before buying any plot in a private colony or township:</p>
+  <p>The Directorate of Town and Country Planning (DTCP) Haryana regulates urban land development across the state under the Haryana Development and Regulation of Urban Areas Act, 1975:</p>
   <ul>
-    <li><strong>Check the DTCP License Number:</strong> Request the developer's license certificate issued under the Haryana Development and Regulation of Urban Areas Act, 1975. You can verify licensed colonies online on the official DTCP Haryana portal (tcpharyana.gov.in).</li>
-    <li><strong>Verify the Approved Layout Plan:</strong> Ensure the specific plot number, road width (minimum 9 to 12 meters), and park areas match the sanctioned layout drawing. Plots cut in unauthorized layouts face demolition and lack utility connections.</li>
-    <li><strong>Deen Dayal Jan Awas Yojana (DDJAY):</strong> For affordable plotted housing colonies under DDJAY, verify that the developer has mortgaged the required 50% saleable area with the government and obtained commercial release permissions.</li>
+    <li><strong>DTCP License Verification:</strong> Verify the developer's license number, validity period, and promoter entity on the official <a href="https://tcpharyana.gov.in" target="_blank" rel="noopener noreferrer">DTCP Haryana portal (tcpharyana.gov.in)</a>. Unapproved colonies lack development licenses and are vulnerable to demolition actions.</li>
+    <li><strong>Sanctioned Layout Plan:</strong> Inspect the approved layout drawing bearing the Chief Town Planner's seal. Check the specific plot number, exact dimensions, road width (typically 9m to 12m minimum), green belt reservations, and public utility pockets.</li>
+    <li><strong>Deen Dayal Jan Awas Yojana (DDJAY):</strong> For affordable plotted colonies under DDJAY, confirm that the builder has mortgaged the required percentage of saleable plots with DTCP as performance security and obtained the formal release order before offering those specific plots for sale.</li>
   </ul>
 
-  <h2>2. Check Section 7A NOC Requirements</h2>
-  <p>Under Section 7A of the Haryana Development and Regulation of Urban Areas Act, the registration of agricultural land below 1 acre in notified urban areas requires a No Objection Certificate (NOC) from the District Town Planner (DTP). Without this NOC, the Sub-Registrar / Tehsildar cannot legally register the sale deed. Buying land in an unapproved pocket without Section 7A clearance leads to stalled registry and utility connection refusals.</p>
+  <h2>2. Section 7A NOC from the District Town Planner</h2>
+  <p>Under Section 7A of the Haryana Development and Regulation of Urban Areas Act, 1975, the transfer or registration of vacant land or agricultural plots measuring less than notified thresholds (such as 1 acre or 2 kanals in notified controlled areas) requires an official No Objection Certificate (NOC) from the District Town Planner (DTP). Without this Section 7A NOC, Sub-Registrars and Tehsildars are statutorily prohibited from registering conveyance deeds. Purchasing unapproved sub-divided agricultural land without Section 7A clearance prevents registration, mutation, and lawful utility connections.</p>
 
-  <h2>3. Inspect Jamabandi (Nakal) on Web-HALRIS</h2>
-  <p>Revenue records in Haryana are maintained on the official <strong>Jamabandi portal (jamabandi.nic.in)</strong> managed by the Department of Revenue & Disaster Management:</p>
+  <h2>3. Inspect Jamabandi (Record of Rights) on Web-HALRIS</h2>
+  <p>Land revenue records in Haryana are maintained digitally on the Department of Revenue &amp; Disaster Management's official <a href="https://jamabandi.nic.in" target="_blank" rel="noopener noreferrer">Jamabandi portal (jamabandi.nic.in)</a>:</p>
   <ul>
-    <li><strong>Check Khewat, Khatoni, and Khasra Numbers:</strong> Request the recent Jamabandi copy (Record of Rights) from the seller. Look up the Khasra number on the Jamabandi portal to verify that the seller is the recorded owner.</li>
-    <li><strong>Verify Mutation (Inteqal / Dakhil Kharij):</strong> Ensure the previous transaction was duly mutated in the revenue records. A sale deed without a sanctioned Inteqal means revenue records still show the earlier owner.</li>
-    <li><strong>Check Encumbrance and Mortgages:</strong> Look at the <em>Bilmukammal</em> / Remarks column (Kaifiyat) in the Jamabandi. Any existing bank loan, court stay, or government attachment will be noted here.</li>
+    <li><strong>Khewat, Khatoni, and Khasra Numbers:</strong> Obtain the latest Jamabandi copy (Nakal). Search by owner name or Khasra number on Web-HALRIS to confirm that the seller is the absolute recorded owner and verify their exact share.</li>
+    <li><strong>Sanctioned Mutation (Inteqal / Dakhil Kharij):</strong> Verify that the mutation order in favor of the current seller has been entered and sanctioned by the revenue officer. A registered sale deed without a sanctioned Inteqal leaves the predecessor's name on the revenue record.</li>
+    <li><strong>Remarks Column (Kaifiyat / Bar-Mukammal):</strong> Inspect the remarks column for any encumbrance, including hypothecation to banks, court attachments, government acquisition proceedings, or civil court stay orders.</li>
   </ul>
 
-  <h2>4. Demarcation and Physical Nishandehi</h2>
-  <p>Before closing the transaction, apply for official <em>Nishandehi</em> (demarcation) through the local Halqa Patwari. The Patwari visits the site with revenue measuring chains (Gatha/Zarib) and revenue maps (Sajra) to fix exact physical corner pillars, ensuring you do not pay for land encroached by neighbors or roads.</p>
+  <h2>4. Physical Demarcation (Nishandehi)</h2>
+  <p>Before executing the final deed, apply for an official site demarcation (<em>Nishandehi</em>) through the local Halqa Patwari and Kanungo. The Patwari surveys the parcel using revenue measurement chains (Gatha/Zarib) and village revenue maps (Aks Shajra) to fix physical corner boundary pillars, ensuring the ground boundaries match the revenue record without encroachments.</p>
 
-  <p>Looking for verified residential and agricultural land? Explore <a href="/properties/palwal">verified plots in Palwal</a> and <a href="/properties/faridabad">residential plots in Faridabad</a> on TradeCall India directly with genuine owners and zero brokerage.</p>
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Directorate of Town &amp; Country Planning Haryana (<a href="https://tcpharyana.gov.in" target="_blank" rel="noopener noreferrer">tcpharyana.gov.in</a>), Department of Revenue &amp; Disaster Management Haryana (<a href="https://jamabandi.nic.in" target="_blank" rel="noopener noreferrer">jamabandi.nic.in</a>).<br>
+    <em>Last Reviewed: October 2026. This guide is for educational purposes. Verify specific khasra and title particulars with the jurisdictional Sub-Registrar before executing transactions.</em>
+  </div>
+
+  <p style="margin-top: 16px;">Looking for verified property? Explore <a href="/properties/palwal">verified properties in Palwal</a> and <a href="/properties/faridabad">properties in Faridabad</a> on TradeCall India.</p>
 </article>"""
     },
     {
@@ -56,28 +62,33 @@ GUIDES = [
         "author": "TradeCall Legal & Research Team",
         "tags": "palwal property, documents checklist, sale deed, inteqal, municipal council palwal",
         "content": """<article class="guide-article">
-  <p class="guide-lead">Palwal has emerged as a premier logistics, industrial, and residential corridor along NH-19 (Delhi-Agra Highway) and the KMP Expressway. Here is the complete document checklist to inspect before buying property in Palwal.</p>
+  <p class="guide-lead">With expanding connectivity along NH-19 (Delhi-Agra Highway) and the Western Peripheral Expressway (KMP), property transactions across Palwal district require disciplined document diligence across revenue and municipal authorities.</p>
 
-  <h2>1. 30-Year Title Deed Chain (Sale Deed / Conveyance Deed)</h2>
-  <p>Examine the original registered Sale Deed (Bainama). Ensure you inspect the unbroken chain of transfer deeds going back 30 years to confirm clear, undisputed ownership without inheritance disputes or partial co-sharer claims.</p>
+  <h2>1. 30-Year Chain of Title (Sale Deeds / Conveyance Deeds)</h2>
+  <p>Inspect the original registered title deeds establishing an unbroken 30-year chain of title. Verify that each preceding transfer—whether by Sale Deed, Gift Deed, Partition Deed, or Inheritance—was registered at the Palwal Sub-Registrar Office (located at the Mini Secretariat, Palwal) without missing intermediate conveyance links.</p>
 
-  <h2>2. Sanctioned Mutation (Inteqal) from Palwal Tehsil</h2>
-  <p>Registration of the sale deed at the Palwal Sub-Registrar Office (located at Mini Secretariat, Palwal) must be followed by mutation in the Tehsil records. Ask the seller for the latest sanctioned Mutation Order copy (Inteqal Intikhab) confirming their name as the current titleholder in the revenue register.</p>
+  <h2>2. Sanctioned Mutation Order (Inteqal Intikhab)</h2>
+  <p>Execution of a sale deed must be followed by mutation in the revenue records of Tehsil Palwal. Obtain the certified copy of the sanctioned Mutation Order (Inteqal Intikhab) confirming that the seller's title stands entered in the current Jamabandi register.</p>
 
-  <h2>3. Municipal Council (Nagar Parishad) Dues Clearance</h2>
-  <p>For properties located within the municipal limits of Palwal (such as Kailash Nagar, Panchwati, or Old GT Road):</p>
+  <h2>3. Nagar Parishad Palwal Dues &amp; Property ID Verification</h2>
+  <p>For properties situated within the municipal limits of Palwal (such as Kailash Nagar, Panchwati, Camp Colony, or Old GT Road):</p>
   <ul>
-    <li><strong>Property Tax Assessment:</strong> Check that the property has a unique Property ID assigned by Nagar Parishad Palwal.</li>
-    <li><strong>No Dues Certificate (NDC):</strong> Verify that all property taxes, development charges, and water sewerage dues are paid up to date via the Haryana Urban Local Bodies (ULB) portal.</li>
+    <li><strong>Urban Local Bodies Property ID:</strong> Verify the unique Property ID assigned by Nagar Parishad Palwal on the official <a href="https://ulbharyana.gov.in" target="_blank" rel="noopener noreferrer">Urban Local Bodies Haryana portal (ulbharyana.gov.in)</a>.</li>
+    <li><strong>No Dues Certificate (NDC):</strong> Generate an official online NDC confirming that property taxes, development charges, fire tax, and water/sewerage assessments are fully cleared up to date.</li>
   </ul>
 
   <h2>4. Non-Encumbrance Certificate (Bar-Mukammal)</h2>
-  <p>Apply for a Non-Encumbrance Certificate at the Palwal Sub-Registrar office for the past 12 to 30 years. This certificate certifies whether the property has any registered mortgage, lien, lease, or court attachment.</p>
+  <p>Apply for a certified Non-Encumbrance Certificate at the Palwal Sub-Registrar office covering a minimum search period of 12 to 30 years to verify that the property has not been mortgaged, leased, or attached by court order.</p>
 
-  <h2>5. HRERA Registration for New Projects</h2>
-  <p>If buying a residential flat, floor, or plot in a new commercial or residential development in Palwal, check the Haryana Real Estate Regulatory Authority (HRERA Panchkula) registration number on haryanarera.gov.in. Developers cannot advertise or sell units in projects larger than 500 sq meters or 8 apartments without HRERA registration.</p>
+  <h2>5. HRERA Panchkula Project Registration</h2>
+  <p>If purchasing a plot, apartment, or commercial unit in a newly launched development in Palwal, verify the project's registration on the <a href="https://haryanarera.gov.in" target="_blank" rel="noopener noreferrer">Haryana Real Estate Regulatory Authority portal (haryanarera.gov.in)</a> under HRERA Panchkula jurisdiction (which oversees all districts in Haryana outside Gurugram). Real estate promoters cannot lawfully market or sell units in projects exceeding 500 sq meters or 8 units without an active HRERA registration number.</p>
 
-  <p>Ready to find verified properties in Palwal? Browse <a href="/properties/palwal">plots, houses, and commercial property in Palwal</a> on TradeCall India with zero brokerage fees.</p>
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Nagar Parishad Palwal / ULB Haryana (<a href="https://ulbharyana.gov.in" target="_blank" rel="noopener noreferrer">ulbharyana.gov.in</a>), HRERA Panchkula (<a href="https://haryanarera.gov.in" target="_blank" rel="noopener noreferrer">haryanarera.gov.in</a>), Revenue Department Haryana (<a href="https://jamabandi.nic.in" target="_blank" rel="noopener noreferrer">jamabandi.nic.in</a>).<br>
+    <em>Last Reviewed: October 2026. Consult certified revenue counsel or the Palwal Sub-Registrar to verify specific parcel titles.</em>
+  </div>
+
+  <p style="margin-top: 16px;">Browse verified listings in <a href="/properties/palwal">Palwal property listings</a> on TradeCall India.</p>
 </article>"""
     },
     {
@@ -87,25 +98,32 @@ GUIDES = [
         "author": "TradeCall Research Team",
         "tags": "faridabad plots, hsvp faridabad, neharpar, greater faridabad, builder floors",
         "content": """<article class="guide-article">
-  <p class="guide-lead">With seamless connectivity to South Delhi, Gurgaon via the Gurgaon-Faridabad Road, and Noida via the FNG corridor, Faridabad offers diverse plotting opportunities across established HSVP sectors and Greater Faridabad.</p>
+  <p class="guide-lead">Faridabad's real estate market offers two distinct plotted development models: established urban sectors governed by Haryana Shehri Vikas Pradhikaran (HSVP) and private townships across Greater Faridabad (Neharpar). Evaluating a residential plot requires assessing regulatory status, structural allowances, and physical infrastructure.</p>
 
-  <h2>1. HSVP (HUDA) Sectors vs. Private Townships</h2>
-  <p>Understand the land administration differences across Faridabad:</p>
+  <h2>1. HSVP Sectors vs. Licensed Private Townships</h2>
+  <p>Understand the land administration framework across Faridabad:</p>
   <ul>
-    <li><strong>HSVP Sectors (Sectors 14, 15, 16, 21, 28, 46, 85):</strong> Developed by Haryana Shehri Vikas Pradhikaran with planned underground drainage, wide sector roads, and established community parks. Plots here carry Allotment Letters, Re-allotment Letters, and Conveyance Deeds issued directly by HSVP.</li>
-    <li><strong>Greater Faridabad / Neharpar (Sectors 75 to 89):</strong> Features modern private townships like BPTP Parklands, Puri Aman Villas, and Omaxe. Verify that the internal road infrastructure, sector master roads, and trunk sewer lines are operational and that maintenance agreements are transparent.</li>
+    <li><strong>HSVP Sectors (Sectors 14, 15, 16, 21, 28, 46, 85):</strong> Developed by <a href="https://hsvp.org.in" target="_blank" rel="noopener noreferrer">HSVP (formerly HUDA, hsvp.org.in)</a>. Plots carry formal Allotment Letters, Re-allotment Letters, and Conveyance Deeds issued by HSVP. Title transfers require official HSVP Transfer Permissions and No Dues Certificates.</li>
+    <li><strong>Greater Faridabad / Neharpar (Sectors 75 to 89):</strong> Plotted developments governed by DTCP licenses under DDJAY or integrated township policies. Verify that the developer has paid all External Development Charges (EDC) and Internal Development Charges (IDC) to DTCP Haryana, and that municipal trunk services (water, sewer, stormwater) are connected.</li>
   </ul>
 
-  <h2>2. Road Width and Stilt + 4 Floor Permissions</h2>
-  <p>Building regulations in Haryana allow stilt plus four (S+4) floor construction subject to specific plot road width requirements (typically minimum 10 to 12 meters road width and mutual neighbor consent policies in notified sectors). If you plan to build independent builder floors for resale, ensure the plot frontage and road width comply with the latest Haryana Town and Country Planning building code.</p>
+  <h2>2. Building Byelaws and Stilt + 4 (S+4) Policy</h2>
+  <p>In Haryana, construction permissions for independent builder floors (Stilt + 4 floors) are subject to stringent state guidelines:</p>
+  <ul>
+    <li>Road width must meet the statutory threshold (typically 10 meters or wider in notified sectors).</li>
+    <li>Mutual written consent from adjoining plot owners is required in existing residential sectors where S+4 was not originally sanctioned in the layout.</li>
+    <li>Adequate structural safety certification, rainwater harvesting, and fire clearances must be submitted to the Municipal Corporation of Faridabad (MCF) or HSVP before building plan approval.</li>
+  </ul>
 
-  <h2>3. Soil Bearing Capacity and Groundwater</h2>
-  <p>Parts of Neharpar have higher groundwater tables and alluvial soil. Before purchasing a large plot for multi-story construction, commission an independent soil testing report to determine foundation depth and basement waterproofing requirements.</p>
+  <h2>3. Infrastructure and Transit Proximity</h2>
+  <p>Examine physical proximity to key transport corridors: the Delhi Metro Violet Line (stations at Bata Chowk, Neelam Chowk, Old Faridabad), the Delhi-Mumbai Expressway bypass link, and the Faridabad-Noida-Ghaziabad (FNG) expressway corridor. Plots with direct access to 24m or 30m sector roads command superior long-term liquidity and rental demand.</p>
 
-  <h2>4. Distance from Rapid Transit and Expressways</h2>
-  <p>Evaluate accessibility to key transit lines: the Violet Line Delhi Metro stations (Escorts Mujesar, Bata Chowk, Neelam Chowk, Old Faridabad) and direct access ramps to the Delhi-Mumbai Expressway. Properties within 10 to 15 minutes of these transport corridors enjoy superior capital appreciation and rental yields.</p>
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Haryana Shehri Vikas Pradhikaran (<a href="https://hsvp.org.in" target="_blank" rel="noopener noreferrer">hsvp.org.in</a>), Municipal Corporation of Faridabad (<a href="https://mcfbd.com" target="_blank" rel="noopener noreferrer">mcfbd.com</a>), DTCP Haryana (<a href="https://tcpharyana.gov.in" target="_blank" rel="noopener noreferrer">tcpharyana.gov.in</a>).<br>
+    <em>Last Reviewed: October 2026. Verify current sector zoning and building regulations with MCF/HSVP prior to plot acquisition.</em>
+  </div>
 
-  <p>Explore <a href="/properties/faridabad">verified residential plots and builder floors in Faridabad</a> on TradeCall India directly from verified sellers.</p>
+  <p style="margin-top: 16px;">Explore <a href="/properties/faridabad">verified residential plots and floors in Faridabad</a> on TradeCall India.</p>
 </article>"""
     },
     {
@@ -113,60 +131,79 @@ GUIDES = [
         "permalink": "property-registration-and-purchase-costs-in-haryana",
         "category": "legal-guide",
         "author": "TradeCall Legal & Research Team",
-        "tags": "haryana stamp duty, property registration fee, circle rate palwal, faridabad circle rates, egras haryana",
+        "tags": "haryana stamp duty, property registration fee, circle rate palwal, faridabad circle rates, egras haryana, section 393 income tax",
         "content": """<article class="guide-article">
-  <p class="guide-lead">When budgeting for property purchase in Haryana, transaction costs beyond the agreed purchase price include stamp duty, registration charges, municipal cess, and documentation fees. Here is the official fee structure across Haryana.</p>
+  <p class="guide-lead">Budgeting for property acquisition in Haryana requires an accurate understanding of statutory stamp duty rates, municipal surcharges, registration fee slabs, and applicable tax deduction at source (TDS) provisions under Indian tax law.</p>
 
-  <h2>1. Haryana Stamp Duty Rates (2026 Structure)</h2>
-  <p>Stamp duty in Haryana varies based on the buyer's gender and whether the property falls within an urban (Municipal Corporation / Council) or rural area:</p>
+  <h2>1. Official Haryana Stamp Duty Rates Structure</h2>
+  <p>Under the Indian Stamp Act, 1899 (as amended in its application to the State of Haryana) and the Haryana Municipal Act / Haryana Municipal Corporation Act, stamp duty on sale and conveyance deeds varies based on property location (Urban vs. Rural) and buyer ownership category:</p>
+
   <table class="guide-table" style="width: 100%; border-collapse: collapse; margin: 16px 0;">
     <thead>
       <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
         <th style="padding: 10px; text-align: left;">Category of Buyer</th>
-        <th style="padding: 10px; text-align: left;">Urban / Municipal Area</th>
-        <th style="padding: 10px; text-align: left;">Rural / Outside MC Area</th>
+        <th style="padding: 10px; text-align: left;">Urban / Within Municipal Limits</th>
+        <th style="padding: 10px; text-align: left;">Rural / Outside Municipal Limits</th>
       </tr>
     </thead>
     <tbody>
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px;"><strong>Male Buyer</strong></td>
-        <td style="padding: 10px;">7.0% (5% Stamp Duty + 2% MC Cess)</td>
-        <td style="padding: 10px;">5.0%</td>
+        <td style="padding: 10px;"><strong>Male Buyer (Sole or Male + Male)</strong></td>
+        <td style="padding: 10px;"><strong>7.0%</strong> (5.0% Stamp Duty + 2.0% Municipal Duty)</td>
+        <td style="padding: 10px;"><strong>5.0%</strong> (5.0% Stamp Duty)</td>
       </tr>
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px;"><strong>Female Buyer</strong></td>
-        <td style="padding: 10px;">5.0% (3% Stamp Duty + 2% MC Cess)</td>
-        <td style="padding: 10px;">3.0%</td>
+        <td style="padding: 10px;"><strong>Female Buyer (Sole or Female + Female)</strong></td>
+        <td style="padding: 10px;"><strong>5.0%</strong> (3.0% Stamp Duty + 2.0% Municipal Duty)</td>
+        <td style="padding: 10px;"><strong>3.0%</strong> (3.0% Stamp Duty)</td>
       </tr>
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px;"><strong>Joint Ownership (Male + Female)</strong></td>
-        <td style="padding: 10px;">6.0% (4% Stamp Duty + 2% MC Cess)</td>
-        <td style="padding: 10px;">4.0%</td>
+        <td style="padding: 10px;"><strong>Joint Ownership (Male &amp; Female)</strong></td>
+        <td style="padding: 10px;"><strong>6.0%</strong> (4.0% Stamp Duty + 2.0% Municipal Duty)</td>
+        <td style="padding: 10px;"><strong>4.0%</strong> (4.0% Stamp Duty)</td>
       </tr>
     </tbody>
   </table>
-  <p><em>Pro Tip: Registering property in a woman's name or jointly with a female family member saves 1% to 2% in stamp duty across Haryana.</em></p>
 
-  <h2>2. Registration Fees Slabs in Haryana</h2>
-  <p>In addition to stamp duty, Haryana charges a tiered registration fee based on the property valuation (calculated as the higher of circle rate valuation or declared agreement value):</p>
+  <h3>Important Statutory Variations and Exceptions:</h3>
   <ul>
-    <li>Properties valued up to ₹50,000: ₹100</li>
-    <li>Properties valued ₹50,001 to ₹1,00,000: ₹500</li>
-    <li>Properties valued ₹1,00,001 to ₹5,00,000: ₹1,000</li>
-    <li>Properties valued ₹5,00,001 to ₹10,00,000: ₹5,000</li>
-    <li>Properties valued ₹10,00,001 to ₹25,00,000: ₹10,000</li>
-    <li>Properties valued ₹25,00,001 to ₹50,00,000: ₹15,000</li>
-    <li>Properties valued ₹50,00,001 to ₹1 Crore: ₹25,000</li>
-    <li>Properties valued above ₹1 Crore: Capped at maximum ₹50,000</li>
+    <li><strong>Municipal Duty (2.0%):</strong> Applies to all properties situated within the notified limits of a Municipal Corporation, Municipal Council, Municipal Committee, or Cantonment Board in Haryana. In rural Gram Panchayat areas outside municipal limits, this 2.0% municipal surcharge is not charged.</li>
+    <li><strong>Women Concession (2.0%):</strong> Women sole buyers receive a statutory 2.0% concession on stamp duty compared to male buyers across both urban and rural transactions. Joint ownership between a male and female buyer splits the concession (1.0% lower than male rate).</li>
+    <li><strong>Family Blood-Relation Transfer Exemption:</strong> Under Haryana Revenue Department notification, transfer of immovable property or agricultural land among specified blood relations (father, mother, son, daughter, brother, sister, spouse, grandson, granddaughter) attracts <strong>nil (0%) stamp duty</strong>, subject only to nominal administrative registration fees.</li>
   </ul>
 
-  <h2>3. Understanding Circle Rates (Collector Rates)</h2>
-  <p>Circle rates are the minimum government-mandated benchmark prices per square yard or per acre below which a property cannot be registered. If the transaction value is ₹40 Lakh but the circle rate valuation is ₹50 Lakh, stamp duty must be paid on ₹50 Lakh. District administrations in Palwal and Faridabad revise collector rates periodically.</p>
+  <h2>2. Tiered Registration Fee Slabs in Haryana</h2>
+  <p>In addition to stamp duty, Haryana levies a document registration fee based on the higher of the transaction consideration or the government circle rate valuation, capped at a maximum of ₹50,000:</p>
+  <ul>
+    <li>Valuation up to ₹50,000: ₹100</li>
+    <li>Valuation ₹50,001 to ₹1,00,000: ₹500</li>
+    <li>Valuation ₹1,00,001 to ₹5,00,000: ₹1,000</li>
+    <li>Valuation ₹5,00,001 to ₹10,00,000: ₹5,000</li>
+    <li>Valuation ₹10,00,001 to ₹25,00,000: ₹10,000</li>
+    <li>Valuation ₹25,00,001 to ₹50,00,000: ₹15,000</li>
+    <li>Valuation ₹50,00,001 to ₹1,00,00,000 (₹1 Crore): ₹25,000</li>
+    <li>Valuation above ₹1 Crore: Capped at maximum ₹50,000</li>
+  </ul>
 
-  <h2>4. E-GRAS Portal and Appointment Booking</h2>
-  <p>Stamp duty in Haryana is paid electronically via the <strong>e-GRAS portal (egrashry.nic.in)</strong>. Once the e-challan is generated and stamped, book an appointment slot on the Web-HALRIS portal for biometric verification and photograph capture at the Sub-Registrar office.</p>
+  <h2>3. Income Tax / TDS Requirements for Property Purchases</h2>
+  <p>Under the <strong>Income-tax Act, 2025</strong> (which came into effect on 1 April 2026), tax deduction at source on property transactions is governed as follows:</p>
+  <ul>
+    <li><strong>Governing Section:</strong> Section 393(1) of the Income-tax Act, 2025 [Table Serial No. 3(i)] governs TDS on the transfer of specified immovable property (other than agricultural land) from a resident seller (replacing legacy Section 194-IA under the 1961 Act).</li>
+    <li><strong>Applicable Threshold &amp; Rate:</strong> If the total sale consideration or the stamp duty value (whichever is higher) is <strong>₹50 Lakh or more</strong>, the buyer must deduct <strong>1.0% TDS</strong> from the payment.</li>
+    <li><strong>Challan-cum-Statement Form 141 (Schedule B):</strong> The buyer must remit the deducted tax and submit the statement using <strong>Form 141 (Schedule B)</strong> on the official <a href="https://incometax.gov.in" target="_blank" rel="noopener noreferrer">Income Tax e-Filing portal (incometax.gov.in)</a>.</li>
+    <li><strong>No TAN Required for Resident Transactions:</strong> Individual or HUF buyers purchasing from a resident seller do not require a Tax Deduction Account Number (TAN); the transaction is authenticated using the buyer's and seller's PAN.</li>
+    <li><strong>Non-Resident Sellers (NRIs):</strong> If the seller is a non-resident, Section 393(1) does not apply. Tax must be deducted under non-resident withholding provisions requiring the buyer to obtain a TAN, file Form 27Q, and deduct tax at applicable capital gains rates unless a lower deduction certificate under Section 398 is obtained.</li>
+  </ul>
 
-  <p>Calculate your exact property costs and explore zero-brokerage listings in <a href="/properties/palwal">Palwal</a> and <a href="/properties/faridabad">Faridabad</a> on TradeCall India.</p>
+  <h2>4. Circle Rate Valuation and e-GRAS Challan Process</h2>
+  <p>Stamp duty is calculated on the higher of the actual transaction value or the government-notified Collector Rate (Circle Rate) published on <a href="https://jamabandi.nic.in" target="_blank" rel="noopener noreferrer">jamabandi.nic.in</a>. Stamp duty must be paid electronically via the Haryana Government Receipts portal <a href="https://egrashry.nic.in" target="_blank" rel="noopener noreferrer">e-GRAS (egrashry.nic.in)</a> prior to booking the physical registry appointment slot at the Sub-Registrar office.</p>
+
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Haryana Revenue &amp; Disaster Management Department (<a href="https://jamabandi.nic.in" target="_blank" rel="noopener noreferrer">jamabandi.nic.in</a>), e-GRAS Haryana (<a href="https://egrashry.nic.in" target="_blank" rel="noopener noreferrer">egrashry.nic.in</a>), Income Tax Department of India (<a href="https://incometax.gov.in" target="_blank" rel="noopener noreferrer">incometax.gov.in</a>).<br>
+    <em>Last Reviewed: October 2026. Stamp duty and tax laws are subject to legislative amendments and municipal notification updates. Verify current rates with the jurisdictional Sub-Registrar before financial disbursement.</em>
+  </div>
+
+  <p style="margin-top: 16px;">Browse verified properties across <a href="/properties/palwal">Palwal</a> and <a href="/properties/faridabad">Faridabad</a> on TradeCall India.</p>
 </article>"""
     },
     {
@@ -176,28 +213,30 @@ GUIDES = [
         "author": "TradeCall Research Team",
         "tags": "palwal localities, omaxe city palwal, huda sector 2 palwal, kailash nagar, panchwati",
         "content": """<article class="guide-article">
-  <p class="guide-lead">Palwal is rapidly transforming into a major residential hub in the National Capital Region. Selecting the right locality depends on your budget, proximity to transit, and preference for integrated gated townships versus established residential sectors.</p>
+  <p class="guide-lead">Selecting a residential locality in Palwal involves balancing connectivity to the National Highway network, municipal infrastructure development, and preference for integrated private townships versus HSVP government sectors.</p>
 
-  <h2>1. Omaxe City (Phase-I & Phase-II) — Gated Township Living</h2>
-  <p>Located directly along NH-19 (Delhi-Mathura Highway), Omaxe City is Palwal's flagship integrated township offering residential plots, independent villas, and commercial shops. Key advantages include 24x7 security, underground electricity cables, wide asphalt roads, landscaped parks, and an operational shopping plaza. Ideal for families seeking a clean, planned urban environment with immediate highway access.</p>
+  <h2>1. Omaxe City (Phase-I &amp; Phase-II) — Integrated Highway Township</h2>
+  <p>Fronting directly onto NH-19 (Delhi-Mathura Highway), Omaxe City is Palwal's premier DTCP-licensed township offering residential plots, built villas, and commercial shops. Key infrastructure includes underground cabling, paved sector roads, landscaped green belts, 24x7 security, and dedicated commercial areas. It provides immediate vehicular access towards Faridabad, Delhi, and Mathura without city traffic delays.</p>
 
-  <h2>2. HUDA Sector 2 — Prime Administrative Hub</h2>
-  <p>Developed by the Haryana Shehri Vikas Pradhikaran, Sector 2 is situated near the District Court, Mini Secretariat, and SP Office. It features wide sector roads, reliable municipal water supply, underground drainage, and established parks. Due to its central administrative location and limited plot availability, Sector 2 commands solid resale demand and high appreciation.</p>
+  <h2>2. HUDA Sector 2 — Administrative Core &amp; Urban Amenities</h2>
+  <p>Developed by HSVP, Sector 2 is situated adjacent to the Palwal District Administrative Complex (Mini Secretariat, District Court, and SP Office). It features established municipal water pipelines, underground sewage networks, wide sector avenues, and mature public parks. Due to limited supply and high administrative convenience, plots in Sector 2 maintain consistent capital demand.</p>
 
-  <h2>3. Kailash Nagar and Panchwati Colony — Established Core Localities</h2>
-  <p>For buyers prioritizing walkability to the historic Palwal railway station, Old GT Road, and central bazaars, Kailash Nagar and Panchwati Colony provide established social infrastructure. Schools, clinics, grocery markets, and banks are within walking distance, making them popular for joint families and rental demand.</p>
+  <h2>3. Kailash Nagar, Panchwati Colony, and Camp Colony</h2>
+  <p>For buyers who prioritize established social infrastructure, walkability to Palwal Railway Station, Old GT Road commercial markets, and historic schools, localities like Kailash Nagar, Panchwati Colony, and Camp Colony provide mature community ecosystems with vibrant retail access.</p>
 
-  <h2>4. Lavender Green Society and New Extension Colony</h2>
-  <p>These emerging residential pockets offer competitively priced plots and builder floors. They are well-suited for first-time buyers looking for entry-level residential plots with fast connectivity to the Palwal-Sohna Road and the upcoming Western Peripheral (KMP) expressway interchanges.</p>
-
-  <h2>Locality Comparison Checklist</h2>
+  <h2>Essential Diligence Checklist Before Choosing a Locality:</h2>
   <ul>
-    <li><strong>Connectivity:</strong> Travel time to NH-19, KMP Expressway, and Delhi-Mumbai Expressway interchange at Mandkola.</li>
-    <li><strong>Water & Drainage:</strong> Check whether the colony connects to the municipal sewer line or relies on individual soak pits.</li>
-    <li><strong>Registry Type:</strong> Confirm that the plot is located in an approved zone with Section 7A compliance and direct registry eligibility.</li>
+    <li><strong>Section 7A Compliance:</strong> Confirm that the colony is DTCP-approved or regularized under Haryana Municipal policies. Unauthorized colonies lacking Section 7A NOC cannot obtain lawful registry or municipal sewerage connections.</li>
+    <li><strong>Expressway Connectivity:</strong> Measure drive time to the KMP Expressway interchange and the Delhi-Mumbai Expressway access ramp at Mandkola.</li>
+    <li><strong>Municipal Water &amp; Drainage:</strong> Verify whether the locality is connected to the Nagar Parishad Palwal trunk sewer network or relies on private soak wells.</li>
   </ul>
 
-  <p>Compare verified plots and houses in <a href="/palwal/omaxe-city-phase-ii">Omaxe City Phase-II</a> and throughout <a href="/properties/palwal">Palwal property listings</a> on TradeCall India.</p>
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Nagar Parishad Palwal (<a href="https://ulbharyana.gov.in" target="_blank" rel="noopener noreferrer">ulbharyana.gov.in</a>), DTCP Haryana (<a href="https://tcpharyana.gov.in" target="_blank" rel="noopener noreferrer">tcpharyana.gov.in</a>).<br>
+    <em>Last Reviewed: October 2026. Always inspect the layout approval and zoning notification before finalizing locality selection.</em>
+  </div>
+
+  <p style="margin-top: 16px;">Compare active listings in <a href="/palwal/omaxe-city-phase-ii">Omaxe City Phase-II</a> and throughout <a href="/properties/palwal">Palwal property listings</a> on TradeCall India.</p>
 </article>"""
     },
     {
@@ -207,32 +246,37 @@ GUIDES = [
         "author": "TradeCall Legal Team",
         "tags": "buying plot haryana, legal checks, bayana agreement, gpa property risk, rera haryana",
         "content": """<article class="guide-article">
-  <p class="guide-lead">Land transactions carry unique legal complexities that do not apply to ready-to-move apartments. Before handing over token money for any residential or agricultural plot in Haryana, execute these seven vital checks.</p>
+  <p class="guide-lead">Land transactions carry distinct legal and revenue risks that require structured verification before signing an agreement to sell or remitting financial advances. Here are seven statutory and practical checks every buyer must conduct in Haryana.</p>
 
-  <h2>1. Insist on a Registered Sale Deed (Avoid GPA Sales)</h2>
-  <p>The Supreme Court of India in the landmark <em>Suraj Lamp & Industries</em> judgment made it clear that property transfers via General Power of Attorney (GPA), Agreement to Sell, or Will do not confer legal ownership title. Always insist on a registered Conveyance Deed or Sale Deed registered at the local Sub-Registrar office.</p>
+  <h2>1. Insist on a Registered Conveyance Deed (Avoid GPA Sales)</h2>
+  <p>The Supreme Court of India in <em>Suraj Lamp &amp; Industries Pvt. Ltd. v. State of Haryana</em> (2012) 1 SCC 656 held that property transfers executed via General Power of Attorney (GPA), Agreement to Sell, or Will do not confer legal ownership or convey title to immovable property. A lawful conveyance requires a duly stamped and registered Sale Deed (Bainama) executed at the jurisdictional Sub-Registrar office under Section 17 of the Registration Act, 1908.</p>
 
-  <h2>2. Verify Physical Site Demarcation and Boundaries</h2>
-  <p>Never rely solely on map drawings. Physically visit the plot, measure the plot dimensions (frontage and depth in feet and gaj), and ensure the plot boundaries match the Aks Shajra (revenue map). Confirm that there are no high-tension electricity lines (HT lines) passing overhead or public drains passing through the land.</p>
+  <h2>2. Physical Ground Demarcation (Aks Shajra &amp; Nishandehi)</h2>
+  <p>Never rely solely on private architectural drawings. Physically inspect the site with the Halqa Patwari to perform an official <em>Nishandehi</em> against the village revenue map (Aks Shajra). Verify that no high-tension electrical transmission lines pass overhead, no public stormwater drains encroach upon the plot, and physical boundary pegs match the title dimensions.</p>
 
-  <h2>3. Draft the Agreement to Sell (Bayana) with Protective Clauses</h2>
-  <p>When paying earnest money (Bayana):</p>
+  <h2>3. Draft a Legally Enforceable Agreement to Sell (Bayana)</h2>
+  <p>When executing an Agreement to Sell:</p>
   <ul>
-    <li>Specify the total agreed sale consideration and the schedule of payments.</li>
-    <li>Include a clear title warranty stating that the seller guarantees the property is free from all encumbrances, litigations, tax dues, and bank charges.</li>
-    <li>Incorporate a clause stating that if the title is found defective during verification or if Section 7A NOC is rejected, the seller must refund the entire earnest money with interest within a defined timeframe.</li>
+    <li>Clearly state the agreed sale consideration, payment schedule, and target date for registry execution.</li>
+    <li>Incorporate an express title warranty confirming the seller holds clear, marketable title free from all encumbrances, bank liens, mortgages, and litigation.</li>
+    <li>Include an explicit refund covenant stipulating that if title defects arise during revenue searches or if Section 7A NOC is refused by authorities, the seller must refund the entire earnest money with specified interest within 15 days.</li>
   </ul>
 
-  <h2>4. Check for Agricultural Land Ceiling and Co-sharer Rights</h2>
-  <p>If buying agricultural land, check whether the seller is an exclusive owner or a joint co-sharer in a shared Khewat. Under the Punjab Land Revenue Act as applicable to Haryana, a co-sharer can sell only their undivided share, not a specific demarcated physical piece of land without a formal partition (Taqseem) order from the Tehsildar.</p>
+  <h2>4. Check for Agricultural Land Ceiling and Co-Sharer Rights</h2>
+  <p>If purchasing agricultural or semi-urban land held in a joint khewat, determine whether the seller is an exclusive titleholder or a co-sharer. Under the Punjab Land Revenue Act, 1887 (as applicable to Haryana), a co-sharer cannot unilaterally convey a specific, demarcated physical portion of shared land without a formal partition (Taqseem) order sanctioned by the revenue court.</p>
 
-  <h2>5. Verify Identity and Family Consent</h2>
-  <p>Cross-verify the seller's name, parentage, and photo ID against the registered deed and Jamabandi. In cases of ancestral Hindu Undivided Family (HUF) property, ensure all legal coparceners sign the sale deed or provide registered relinquishment deeds to avoid future title disputes.</p>
+  <h2>5. Verify Identity, Family Coparcenary, and Succession</h2>
+  <p>Cross-check the seller's identity credentials and family tree against the revenue record. In ancestral Hindu Undivided Family (HUF) properties, verify that all coparceners (including daughters and sons) consent to the alienation or have executed registered relinquishment deeds to avert subsequent inheritance suits.</p>
 
-  <h2>6. Verify EDC/IDC and Infrastructure Charges</h2>
-  <p>In licensed private townships and plotted colonies, check whether External Development Charges (EDC) and Internal Development Charges (IDC) have been fully remitted by the developer to DTCP. Outstanding developer dues can lead to statutory notices and construction ban orders.</p>
+  <h2>6. Verify EDC, IDC, and Infrastructure Cleared Status</h2>
+  <p>In licensed private townships and plotted schemes, confirm that the developer has remitted all External Development Charges (EDC) and Internal Development Charges (IDC) to DTCP Haryana. Non-payment of developer charges can result in statutory recovery notices and utility connection withholding.</p>
 
-  <p>Search verified, zero-brokerage plots and agricultural land directly from genuine owners on <a href="/properties/palwal">TradeCall Palwal</a> and <a href="/properties/faridabad">TradeCall Faridabad</a>.</p>
+  <div class="guide-sources" style="margin-top: 24px; padding: 14px; background: #f8fafc; border-left: 4px solid #0c6253; font-size: 13px;">
+    <strong>Authoritative Sources:</strong> Supreme Court of India (Suraj Lamp judgment), Punjab Land Revenue Act 1887, DTCP Haryana (<a href="https://tcpharyana.gov.in" target="_blank" rel="noopener noreferrer">tcpharyana.gov.in</a>).<br>
+    <em>Last Reviewed: October 2026. This guide does not constitute legal representation; retain qualified legal counsel to perform formal title searches before executing contracts.</em>
+  </div>
+
+  <p style="margin-top: 16px;">Search verified properties directly from genuine owners on <a href="/properties/palwal">TradeCall Palwal</a> and <a href="/properties/faridabad">TradeCall Faridabad</a>.</p>
 </article>"""
     }
 ]

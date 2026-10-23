@@ -179,3 +179,32 @@ def test_blog_guides_seeding_and_ssr(client: TestClient, db_session: Session):
     assert '<link rel="canonical" href="https://tradecall.in/blog/' + g["permalink"] + '" />' in html
     assert '"@type": "BlogPosting"' in html
     assert "DTCP Approval" in html
+
+
+def test_property_costs_guide_content(client: TestClient, db_session: Session):
+    """Property costs guide must reflect official Haryana Revenue rates and Income-tax Act 2025 Section 393(1)."""
+    cost_guide = next(g for g in GUIDES if g["permalink"] == "property-registration-and-purchase-costs-in-haryana")
+    b = Blog(
+        title=cost_guide["title"],
+        permalink=cost_guide["permalink"],
+        category=cost_guide["category"],
+        content=cost_guide["content"],
+        author=cost_guide["author"],
+        tags=cost_guide["tags"],
+        status="published"
+    )
+    db_session.add(b)
+    db_session.commit()
+
+    res = client.get(f"/blog/{cost_guide['permalink']}")
+    assert res.status_code == 200
+    html = res.text
+
+    assert "Section 393(1)" in html
+    assert "Form 141 (Schedule B)" in html
+    assert "7.0%" in html
+    assert "5.0% Stamp Duty + 2.0% Municipal Duty" in html
+    assert "egrashry.nic.in" in html
+    assert "jamabandi.nic.in" in html
+    assert "Last Reviewed: October 2026" in html
+
