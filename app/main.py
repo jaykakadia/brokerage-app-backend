@@ -83,8 +83,8 @@ app.include_router(sitemap_router)
 app.include_router(legacy_redirects_router)
 app.include_router(legacy_router)
 app.include_router(public_pages_router)
-app.include_router(city_pages_router)
 app.include_router(listing_pages_router)
+app.include_router(city_pages_router)
 from fastapi.encoders import jsonable_encoder
 
 # 4. Standardized Error Handling

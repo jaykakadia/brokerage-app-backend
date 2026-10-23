@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 ./venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt
 ./venv/bin/alembic upgrade head
+./venv/bin/python scripts/seed_blog_guides.py || true
 
 sudo /usr/bin/systemctl restart tradecall-api
 

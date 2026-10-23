@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.db.models.blog import Blog
-from app.core.cities import MIN_HUB_LISTINGS, slugify_city, get_city_display_name
+from app.core.cities import MIN_HUB_LISTINGS, slugify_city, slugify_locality, get_city_display_name
 from app.core.validation_rules import is_buyer_requirement, is_thin_business
 
 router = APIRouter(tags=["Sitemap"])
@@ -139,6 +139,7 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
                     city_listings[slug].append(datetime.utcnow())
 
     items: List[Dict[str, Optional[str]]] = []
+    # 1. City Hubs (English)
     for slug, dts in city_listings.items():
         if len(dts) >= MIN_HUB_LISTINGS and get_city_display_name(slug, db=db):
             latest_dt = max(dts) if dts else None
@@ -146,6 +147,50 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
                 "loc": f"{BASE_URL}/properties/{slug}",
                 "lastmod": _format_date(latest_dt) if latest_dt else None
             })
+
+    # 2. Hindi Pilot Hubs (Palwal & Faridabad)
+    for hi_city in ("palwal", "faridabad"):
+        if hi_city in city_listings and len(city_listings[hi_city]) >= MIN_HUB_LISTINGS:
+            dts = city_listings[hi_city]
+            latest_dt = max(dts) if dts else None
+            items.append({
+                "loc": f"{BASE_URL}/hi/properties/{hi_city}",
+                "lastmod": _format_date(latest_dt) if latest_dt else None
+            })
+
+    # 3. Sub-Locality Hubs (qualifying >= 2 approved listings)
+    locality_listings: Dict[tuple, List[datetime]] = defaultdict(list)
+    for loc_str, f_data, upd, crt in approved_listings:
+        raw_city = None
+        raw_loc = None
+        if isinstance(f_data, dict):
+            raw_city = f_data.get("city")
+            raw_loc = f_data.get("locality")
+        if not raw_city and loc_str:
+            parts = [p.strip() for p in loc_str.split(",") if p.strip()]
+            raw_city = parts[-2] if len(parts) >= 3 else (parts[0] if parts else None)
+            if not raw_loc and parts:
+                raw_loc = parts[0]
+        elif not raw_loc and loc_str:
+            parts = [p.strip() for p in loc_str.split(",") if p.strip()]
+            if parts and parts[0] != raw_city:
+                raw_loc = parts[0]
+
+        if raw_city and raw_loc:
+            c_slug = slugify_city(raw_city)
+            l_slug = slugify_locality(raw_loc)
+            if c_slug and l_slug and l_slug != c_slug:
+                dt = upd or crt or datetime.utcnow()
+                locality_listings[(c_slug, l_slug)].append(dt)
+
+    for (c_slug, l_slug), dts in locality_listings.items():
+        if len(dts) >= 2 and get_city_display_name(c_slug, db=db):
+            latest_dt = max(dts) if dts else None
+            items.append({
+                "loc": f"{BASE_URL}/{c_slug}/{l_slug}",
+                "lastmod": _format_date(latest_dt) if latest_dt else None
+            })
+
     items.sort(key=lambda x: x["loc"])
     return items
 

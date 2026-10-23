@@ -601,6 +601,10 @@ def get_listing_page_by_id(listing_id: str, request: Request, db: Session = Depe
 
 @router.api_route("/{city_slug}/{title_slug}/{unique_code}", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def get_listing_page_by_slug(city_slug: str, title_slug: str, unique_code: str, request: Request, db: Session = Depends(get_db)):
+    if city_slug.lower() == "hi" and title_slug.lower() == "properties":
+        from app.routers.city_pages import get_hindi_city_properties_page
+        return get_hindi_city_properties_page(city_slug=unique_code, request=request, db=db)
+
     # Guard against non-listing routes
     if city_slug.lower() in {
         "api", "uploads", "assets", "static", "docs", "redoc", "openapi.json",

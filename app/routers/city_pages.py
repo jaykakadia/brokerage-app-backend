@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -63,6 +63,18 @@ def set_or_replace_rel_links(html: str, prev_url: Optional[str], next_url: Optio
     if rel_tags:
         return html.replace("</head>", "\n".join(rel_tags) + "\n</head>")
     return html
+
+
+def set_or_replace_hreflang(html: str, en_url: str, hi_url: Optional[str] = None) -> str:
+    """Injects or replaces hreflang link tags in head (en-IN, hi-IN, and x-default)."""
+    html = re.sub(r'<link\b[^>]*\bhreflang=["\'][^"\']*["\'][^>]*>', '', html, flags=re.IGNORECASE)
+    tags = [
+        f'  <link rel="alternate" hreflang="en-IN" href="{en_url}" />',
+        f'  <link rel="alternate" hreflang="x-default" href="{en_url}" />',
+    ]
+    if hi_url:
+        tags.insert(1, f'  <link rel="alternate" hreflang="hi-IN" href="{hi_url}" />')
+    return html.replace("</head>", "\n".join(tags) + "\n</head>")
 
 
 _html_cache = {
@@ -642,9 +654,11 @@ def get_city_properties_page(
     else:
         html = html.replace("</head>", f'  <meta name="description" content="{escaped_desc}" />\n</head>')
 
-    # 3. Canonical & Rel prev/next
+    # 3. Canonical & Rel prev/next & Hreflang
     html = set_or_replace_canonical(html, canonical)
     html = set_or_replace_rel_links(html, prev_url, next_url)
+    hi_url = f"{BASE_URL}/hi/properties/{norm_slug}" if norm_slug in ("palwal", "faridabad") else None
+    html = set_or_replace_hreflang(html, f"{BASE_URL}/properties/{norm_slug}", hi_url)
 
     # 4. Robots meta tag
     html = set_or_replace_meta(html, "name", "robots", robots_content)
@@ -754,3 +768,494 @@ def get_city_properties_page(
 
     html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
     return HTMLResponse(content=html, status_code=status.HTTP_200_OK, media_type="text/html")
+
+
+# ==============================================================================
+# HINDI PILOT HUBS (I-28)
+# ==============================================================================
+
+HINDI_CITY_INFO = {
+    "palwal": {
+        "city_hi": "पलवल",
+        "title": "पलवल में प्रॉपर्टी - मकान, प्लॉट और जमीन | TradeCall India",
+        "desc": "पलवल में 130+ वेरिफाइड प्रॉपर्टी खरीदें या किराए पर लें। बिना किसी ब्रोकरेज के सीधे मालिक से संपर्क करें। प्लॉट, मकान, कृषि भूमि और कमर्शियल प्रॉपर्टी।",
+        "h1": "पलवल में प्रॉपर्टी (मकान, प्लॉट और जमीन)",
+        "intro": "ट्रेडकॉल इंडिया (TradeCall India) पर पलवल में शून्य ब्रोकरेज (Zero Brokerage) के साथ प्रमाणित प्रॉपर्टीज खोजें। यहां आपको ओमेक्स सिटी, हुड्डा सेक्टर 2, कैलाश नगर, पंचवटी और दिल्ली-मथुरा नेशनल हाईवे (NH-19) के पास सीधे मालिकों द्वारा लिस्टेड प्लॉट्स, स्वतंत्र मकान और कृषि भूमि मिलती है।",
+        "prop_types": [
+            "पलवल में आवासीय मकान और विला",
+            "पलवल में कमर्शियल दुकानें और ऑफिस स्पेस",
+            "पलवल में आवासीय प्लॉट और जमीन",
+            "पलवल में कृषि भूमि और फार्म हाउस"
+        ],
+        "faqs": [
+            {
+                "question": "पलवल में प्रॉपर्टी की औसत कीमतें क्या हैं?",
+                "answer": "पलवल में आवासीय प्लॉट्स लगभग ₹15,000 से ₹45,000 प्रति गज तक उपलब्ध हैं। स्वतंत्र मकान और विला ₹30 लाख से ₹1.5 करोड़ के बीच मिलते हैं।"
+            },
+            {
+                "question": "क्या ट्रेडकॉल इंडिया पर बिना दलाली के सीधे मालिक से प्रॉपर्टी मिल सकती है?",
+                "answer": "जी हां, ट्रेडकॉल इंडिया पर सभी लिस्टिंग्स में आपको सीधे विक्रेता या प्रॉपर्टी मालिक का मोबाइल नंबर मिलता है, जिससे आपको कोई ब्रोकरेज या कमीशन नहीं देना पड़ता।"
+            },
+            {
+                "question": "पलवल में रहने के लिए सबसे अच्छे इलाके कौन से हैं?",
+                "answer": "ओमेक्स सिटी (फेज 1 व 2), हुड्डा सेक्टर 2, कैलाश नगर, पंचवटी कॉलोनी और न्यू एक्सटेंशन कॉलोनी पलवल के सबसे पसंदीदा और सुरक्षित आवासीय क्षेत्र हैं।"
+            },
+            {
+                "question": "हरियाणा में प्लॉट खरीदते समय कौन से दस्तावेज जांचने चाहिए?",
+                "answer": "जमाबंदी (नकल), इंतकाल (दाखिल खारिज), 30 साल की सेल डीड की चेन और डीटीसीपी (DTCP) सेक्शन 7A अनापत्ति प्रमाण पत्र (NOC) की पुष्टि अवश्य करें।"
+            }
+        ]
+    },
+    "faridabad": {
+        "city_hi": "फरीदाबाद",
+        "title": "फरीदाबाद में प्रॉपर्टी - फ्लैट, विला और प्लॉट | TradeCall India",
+        "desc": "फरीदाबाद और ग्रेटर फरीदाबाद (नहरपार) में 30+ वेरिफाइड प्रॉपर्टीज। बिना किसी ब्रोकरेज के सीधे मालिक से संपर्क करें। फ्लैट, बिल्डर फ्लोर और प्लॉट्स।",
+        "h1": "फरीदाबाद में प्रॉपर्टी (फ्लैट, विला और प्लॉट)",
+        "intro": "फरीदाबाद, ग्रेटर फरीदाबाद (नहरपार) और एनआईटी में शून्य ब्रोकरेज के साथ प्रमाणित प्रॉपर्टीज खोजें। यहां आपको 1 BHK, 2 BHK, 3 BHK+ फ्लैट्स, लग्जरी बिल्डर फ्लोर्स और रेसिडेंशियल प्लॉट्स सीधे मालिकों से मिलते हैं।",
+        "prop_types": [
+            "फरीदाबाद में बिल्डर फ्लोर और फ्लैट्स",
+            "ग्रेटर फरीदाबाद (नहरपार) में आवासीय प्लॉट्स",
+            "फरीदाबाद में स्वतंत्र कोठी और विला",
+            "एनआईटी और सेक्टर 85 में कमर्शियल दुकानें"
+        ],
+        "faqs": [
+            {
+                "question": "फरीदाबाद में फ्लैट या बिल्डर फ्लोर की कीमतें क्या हैं?",
+                "answer": "फरीदाबाद में 2 BHK व 3 BHK बिल्डर फ्लोर्स ₹40 लाख से ₹1.5 करोड़ तक और लग्जरी अपार्टमेंट्स ₹2 करोड़ से अधिक में उपलब्ध हैं।"
+            },
+            {
+                "question": "क्या ट्रेडकॉल पर फरीदाबाद की प्रॉपर्टीज पर ब्रोकरेज लगती है?",
+                "answer": "नहीं, ट्रेडकॉल इंडिया जीरो ब्रोकरेज मॉडल पर काम करता है। खरीदार सीधे मालिक या अधिकृत एसोसिएट से बात कर सकते हैं।"
+            },
+            {
+                "question": "ग्रेटर फरीदाबाद (नहरपार) में कनेक्टिविटी कैसी है?",
+                "answer": "ग्रेटर फरीदाबाद दिल्ली-मुंबई एक्सप्रेसवे, बाईपास रोड और वायलेट लाइन मेट्रो से सीधा जुड़ा हुआ है, जिससे दिल्ली और गुड़गांव आवागमन बहुत सुगम है।"
+            }
+        ]
+    }
+}
+
+
+@router.api_route("/hi/properties/{city_slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def get_hindi_city_properties_page(
+    city_slug: str,
+    request: Request,
+    page: int = Query(1, ge=1),
+    db: Session = Depends(get_db)
+):
+    """
+    Renders Hindi Pilot City Hub (Palwal & Faridabad) with natural Hindi translation,
+    reciprocal hreflang tags (en-IN, hi-IN, x-default), Hindi Breadcrumbs, ItemList and FAQPage schemas.
+    """
+    norm_slug = slugify_city(city_slug)
+    city_name = get_city_display_name(norm_slug, db=db)
+    base_html = load_base_index_html()
+
+    if not city_name or norm_slug not in HINDI_CITY_INFO:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hindi page not found")
+
+    info = HINDI_CITY_INFO[norm_slug]
+    matched_listings = get_city_approved_listings(norm_slug, city_name, db)
+    total_listings = len(matched_listings)
+
+    en_canonical = f"{BASE_URL}/properties/{norm_slug}"
+    hi_canonical = f"{BASE_URL}/hi/properties/{norm_slug}"
+
+    title = info["title"]
+    description = info["desc"]
+
+    # Schemas in Hindi
+    breadcrumb_ld = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "होम",
+                "item": f"{BASE_URL}/"
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": f"{info['city_hi']} में प्रॉपर्टी",
+                "item": hi_canonical
+            }
+        ]
+    }
+
+    item_list_elements = []
+    for idx, l in enumerate(matched_listings[:15], start=1):
+        l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
+        item_list_elements.append({
+            "@type": "ListItem",
+            "position": idx,
+            "name": l.title or f"{info['city_hi']} में प्रॉपर्टी",
+            "url": f"{BASE_URL}{l_path}"
+        })
+
+    item_list_ld = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": f"{info['city_hi']} में प्रॉपर्टीज",
+        "numberOfItems": len(item_list_elements),
+        "itemListElement": item_list_elements
+    }
+
+    faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": f["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": f["answer"]
+                }
+            }
+            for f in info["faqs"]
+        ]
+    }
+
+    schemas_code = f"""  <!-- Hindi Schemas: Breadcrumbs, ItemList & FAQPage -->
+  <script type="application/ld+json">
+{json.dumps(breadcrumb_ld, indent=2, ensure_ascii=False)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(item_list_ld, indent=2, ensure_ascii=False)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(faq_ld, indent=2, ensure_ascii=False)}
+  </script>"""
+
+    html = base_html
+    html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+    html = set_or_replace_meta(html, "name", "description", description)
+    html = set_or_replace_canonical(html, hi_canonical)
+    html = set_or_replace_hreflang(html, en_canonical, hi_canonical)
+    html = set_or_replace_meta(html, "name", "robots", "index, follow")
+
+    # OG / Twitter
+    html = set_or_replace_meta(html, "property", "og:title", title)
+    html = set_or_replace_meta(html, "property", "og:description", description)
+    html = set_or_replace_meta(html, "property", "og:url", hi_canonical)
+
+    html = html.replace("</head>", f"{schemas_code}\n</head>")
+
+    items = []
+    for l in matched_listings[:15]:
+        l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
+        p_str = format_price(float(l.price)) if l.price else ""
+        price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
+        items.append(f'<li><a href="{l_path}">{html_lib.escape(l.title or "प्रॉपर्टी")}</a>{price_tag}</li>')
+    listings_markup = "\n          ".join(items)
+
+    faq_markup = "\n".join(
+        f'          <dt style="font-weight: 700; margin-top: 10px;">{html_lib.escape(f["question"])}</dt>\n'
+        f'          <dd style="margin-left: 0; margin-bottom: 8px; color: #4b5563;">{html_lib.escape(f["answer"])}</dd>'
+        for f in info["faqs"]
+    )
+
+    types_markup = "\n".join(f'            <li>{html_lib.escape(t)}</li>' for t in info["prop_types"])
+
+    root_ssr = f"""<div id="root">
+    <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <main class="city-ssr-wrap" lang="hi">
+        <h1>{html_lib.escape(info["h1"])}</h1>
+        <p class="city-lead">{html_lib.escape(info["intro"])}</p>
+        <section class="city-types-section">
+          <h2>प्रॉपर्टी के प्रकार ({html_lib.escape(info["city_hi"])})</h2>
+          <ul>
+{types_markup}
+          </ul>
+        </section>
+        <section class="city-listings-section">
+          <h2>सत्यापित लिस्टिंग्स ({html_lib.escape(info["city_hi"])}) - कुल {total_listings} प्रॉपर्टीज</h2>
+          <ul class="city-listings-links">
+            {listings_markup}
+          </ul>
+        </section>
+        <section class="city-faq-section" style="margin-top: 24px;">
+          <h2>अक्सर पूछे जाने वाले सवाल (FAQ) - {html_lib.escape(info["city_hi"])}</h2>
+          <dl>
+{faq_markup}
+          </dl>
+        </section>
+        <nav style="margin-top: 20px;">
+          <a href="/properties/{norm_slug}">View this page in English</a> | <a href="/">TradeCall होम</a>
+        </nav>
+      </main>
+    </div>
+  </div>"""
+
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
+    return HTMLResponse(content=html, status_code=status.HTTP_200_OK, media_type="text/html")
+
+
+# ==============================================================================
+# SUB-LOCALITY LANDING PAGES (I-27)
+# ==============================================================================
+
+RESERVED_CITY_PATHS = {
+    "api", "assets", "uploads", "static", "properties", "listing", "blog",
+    "about", "contact", "cities", "business-directory", "privacy", "privacy-policy",
+    "terms", "terms-of-use", "advertise", "post-listing", "login", "register",
+    "admin", "hi", "health", "sitemap", "favicon.ico", "robots.txt"
+}
+
+
+def slugify_locality(text: Optional[str]) -> str:
+    """Normalizes locality name into a clean hyphenated URL slug."""
+    if not text:
+        return ""
+    s = text.lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_-]+", "-", s)
+    s = re.sub(r"panchwati-raod", "panchwati-road", s)
+    s = re.sub(r"palwal-nuh-roa(?=-|$)", "palwal-nuh-road", s)
+    s = re.sub(r"hospitcal", "hospital", s)
+    return s.strip("-")
+
+
+def get_locality_approved_listings(city_slug: str, city_name: str, locality_slug: str, db: Session):
+    """
+    Finds approved listings matching both city and locality slug.
+    Returns (matched_listings, best_display_locality_name).
+    """
+    city_listings = get_city_approved_listings(city_slug, city_name, db)
+    matched = []
+    locality_display = locality_slug.replace("-", " ").title()
+
+    for l in city_listings:
+        loc_str = ""
+        if isinstance(l.form_data, dict) and l.form_data.get("locality"):
+            loc_str = str(l.form_data.get("locality")).strip()
+        elif l.location:
+            parts = [p.strip() for p in l.location.split(",") if p.strip()]
+            if parts and parts[0].lower() != city_name.lower():
+                loc_str = parts[0]
+
+        if loc_str:
+            clean_s = slugify_locality(loc_str)
+            if clean_s == locality_slug or locality_slug == clean_s or (len(locality_slug) >= 5 and locality_slug in clean_s):
+                matched.append(l)
+                if len(loc_str) > len(locality_display) or locality_display == locality_slug.replace("-", " ").title():
+                    locality_display = loc_str
+
+    return matched, locality_display
+
+
+@router.api_route("/{city_slug}/{locality_slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def get_sub_locality_properties_page(
+    city_slug: str,
+    locality_slug: str,
+    request: Request,
+    page: int = Query(1, ge=1),
+    db: Session = Depends(get_db)
+):
+    """
+    Renders Sub-Locality Hub (e.g. /palwal/omaxe-city-phase-ii) with verified inventory,
+    price statistics, breadcrumbs, ItemList + FAQPage schemas, and link to parent city hub.
+    """
+    clean_city = city_slug.lower().strip()
+    clean_loc = locality_slug.lower().strip()
+
+    if clean_city in RESERVED_CITY_PATHS or clean_loc in RESERVED_CITY_PATHS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+    city_name = get_city_display_name(clean_city, db=db)
+    if not city_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="City Not Found")
+
+    matched_listings, locality_name = get_locality_approved_listings(clean_city, city_name, clean_loc, db)
+    total_listings = len(matched_listings)
+
+    if total_listings == 0:
+        base_html = load_base_index_html()
+        body = f"""<main style="padding: 40px 20px; text-align: center;">
+          <h1>No Active Listings in {html_lib.escape(locality_name)}</h1>
+          <p>There are currently no active listings in {html_lib.escape(locality_name)}, {html_lib.escape(city_name)}. Explore verified properties across {html_lib.escape(city_name)}.</p>
+          <p><a href="/properties/{clean_city}">Browse All Properties in {html_lib.escape(city_name)}</a></p>
+        </main>"""
+        rendered = re.sub(
+            r"<title>.*?</title>",
+            f"<title>Properties in {html_lib.escape(locality_name)}, {html_lib.escape(city_name)} | TradeCall India</title>",
+            base_html,
+            count=1,
+            flags=re.DOTALL
+        )
+        rendered = set_or_replace_meta(rendered, "name", "robots", "noindex, follow")
+        rendered = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', f'<div id="root">{body}</div>', rendered, count=1, flags=re.DOTALL)
+        return HTMLResponse(content=rendered, status_code=status.HTTP_404_NOT_FOUND)
+
+    # Sub-locality threshold: >= 2 listings indexable; 1 listing noindex
+    robots_content = "index, follow" if total_listings >= 2 else "noindex, follow"
+    canonical = f"{BASE_URL}/{clean_city}/{clean_loc}"
+
+    title = f"Properties in {locality_name}, {city_name} | Buy & Rent | TradeCall India"
+    description = f"{total_listings} verified properties for sale and rent in {locality_name}, {city_name}. Explore plots, flats, and houses directly with genuine owners and zero brokerage."
+
+    price_stats = compute_price_stats(matched_listings)
+    min_p_str = format_price(price_stats["min"]) or "N/A"
+    med_p_str = format_price(price_stats["median"]) or "N/A"
+    max_p_str = format_price(price_stats["max"]) or "N/A"
+
+    # Breadcrumbs Schema
+    breadcrumb_ld = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": f"{BASE_URL}/"
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": f"Properties in {city_name}",
+                "item": f"{BASE_URL}/properties/{clean_city}"
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": locality_name,
+                "item": canonical
+            }
+        ]
+    }
+
+    item_list_elements = []
+    for idx, l in enumerate(matched_listings, start=1):
+        l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
+        item_list_elements.append({
+            "@type": "ListItem",
+            "position": idx,
+            "name": l.title or f"Property in {locality_name}",
+            "url": f"{BASE_URL}{l_path}"
+        })
+
+    item_list_ld = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": f"Properties in {locality_name}, {city_name}",
+        "numberOfItems": len(item_list_elements),
+        "itemListElement": item_list_elements
+    }
+
+    locality_faqs = [
+        {
+            "question": f"What are property prices like in {locality_name}, {city_name}?",
+            "answer": f"Verified property listings in {locality_name} currently range from {min_p_str} up to {max_p_str}, with a median listing price of approximately {med_p_str}."
+        },
+        {
+            "question": f"Can I purchase or rent property in {locality_name} with zero brokerage?",
+            "answer": f"Yes, TradeCall India connects buyers and tenants directly with property owners and verified sellers in {locality_name} with 0% brokerage commission."
+        },
+        {
+            "question": f"What types of properties are available in {locality_name}?",
+            "answer": f"Property options in {locality_name} include residential plots, independent houses, villas, builder floors, and commercial options."
+        },
+        {
+            "question": f"How do I verify plot approvals and registry in {locality_name}?",
+            "answer": f"Always inspect the Jamabandi land records on jamabandi.nic.in, confirm sanctioned mutation (Inteqal), and check DTCP Section 7A NOC compliance before paying bayana."
+        }
+    ]
+
+    faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": f["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": f["answer"]
+                }
+            }
+            for f in locality_faqs
+        ]
+    }
+
+    schemas_code = f"""  <!-- Sub-Locality Schemas: Breadcrumbs, ItemList & FAQPage -->
+  <script type="application/ld+json">
+{json.dumps(breadcrumb_ld, indent=2)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(item_list_ld, indent=2)}
+  </script>
+  <script type="application/ld+json">
+{json.dumps(faq_ld, indent=2)}
+  </script>"""
+
+    base_html = load_base_index_html()
+    html = base_html
+    html = re.sub(r"<title>.*?</title>", f"<title>{title}</title>", html, count=1, flags=re.DOTALL)
+    html = set_or_replace_meta(html, "name", "description", description)
+    html = set_or_replace_canonical(html, canonical)
+    html = set_or_replace_meta(html, "name", "robots", robots_content)
+
+    html = set_or_replace_meta(html, "property", "og:title", title)
+    html = set_or_replace_meta(html, "property", "og:description", description)
+    html = set_or_replace_meta(html, "property", "og:url", canonical)
+
+    html = html.replace("</head>", f"{schemas_code}\n</head>")
+
+    items = []
+    for l in matched_listings:
+        l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
+        p_str = format_price(float(l.price)) if l.price else ""
+        price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
+        items.append(f'<li><a href="{l_path}">{html_lib.escape(l.title or "Property")}</a>{price_tag} in {html_lib.escape(l.location or locality_name)}</li>')
+    listings_markup = "\n          ".join(items)
+
+    faq_markup = "\n".join(
+        f'          <dt style="font-weight: 700; margin-top: 10px;">{html_lib.escape(f["question"])}</dt>\n'
+        f'          <dd style="margin-left: 0; margin-bottom: 8px; color: #4b5563;">{html_lib.escape(f["answer"])}</dd>'
+        for f in locality_faqs
+    )
+
+    root_ssr = f"""<div id="root">
+    <div class="ssr-fallback" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+      <main class="sub-locality-ssr-wrap">
+        <nav aria-label="Breadcrumb" class="breadcrumbs">
+          <a href="/">Home</a> &gt; <a href="/properties/{clean_city}">Properties in {html_lib.escape(city_name)}</a> &gt; <span>{html_lib.escape(locality_name)}</span>
+        </nav>
+        <h1>Properties in {html_lib.escape(locality_name)}, {html_lib.escape(city_name)}</h1>
+        <div class="locality-price-summary">
+          <p><strong>Price Range for {html_lib.escape(locality_name)}:</strong> Starting from {min_p_str} to {max_p_str} (Median: {med_p_str})</p>
+        </div>
+        <p class="locality-lead">Explore {total_listings} verified properties for sale and rent in {html_lib.escape(locality_name)}, {html_lib.escape(city_name)}. Buy directly from owners and verified agents with zero brokerage commission.</p>
+        <section class="locality-listings-section">
+          <h2>Verified Listings in {html_lib.escape(locality_name)} ({total_listings} Properties)</h2>
+          <ul class="locality-listings-links">
+            {listings_markup}
+          </ul>
+        </section>
+        <section class="locality-faq-section" style="margin-top: 24px;">
+          <h2>Frequently Asked Questions about {html_lib.escape(locality_name)}</h2>
+          <dl>
+{faq_markup}
+          </dl>
+        </section>
+        <section class="locality-guides-section" style="margin-top: 20px;">
+          <h2>Buyer Resources & Guides</h2>
+          <ul>
+            <li><a href="/blog/how-to-choose-suitable-residential-locality-in-palwal">Guide to Choosing Residential Localities in Palwal</a></li>
+            <li><a href="/blog/how-to-check-plot-approvals-and-registry-documents-in-haryana">How to Check Plot Approvals & Registry in Haryana</a></li>
+            <li><a href="/blog/property-registration-and-purchase-costs-in-haryana">Haryana Stamp Duty and Registration Charges Explained</a></li>
+          </ul>
+        </section>
+        <nav style="margin-top: 20px;">
+          <a href="/properties/{clean_city}">Browse All Properties in {html_lib.escape(city_name)}</a> | <a href="/cities">All City Hubs</a> | <a href="/">TradeCall Home</a>
+        </nav>
+      </main>
+    </div>
+  </div>"""
+
+    html = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', root_ssr, html, count=1, flags=re.DOTALL)
+    return HTMLResponse(content=html, status_code=status.HTTP_200_OK, media_type="text/html")
+

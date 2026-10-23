@@ -228,3 +228,16 @@ def get_city_display_name(slug: str, db: Optional[Session] = None) -> Optional[s
                 return str(raw).strip().title()
 
     return None
+
+
+def slugify_locality(text: Optional[str]) -> str:
+    """Normalizes locality name into a clean hyphenated URL slug."""
+    if not text:
+        return ""
+    s = text.lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_-]+", "-", s)
+    s = re.sub(r"panchwati-raod", "panchwati-road", s)
+    s = re.sub(r"palwal-nuh-roa(?=-|$)", "palwal-nuh-road", s)
+    s = re.sub(r"hospitcal", "hospital", s)
+    return s.strip("-")

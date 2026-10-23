@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
@@ -338,6 +338,11 @@ def get_privacy_page():
     return HTMLResponse(content=rendered, status_code=status.HTTP_200_OK)
 
 
+@router.api_route("/privacy-policy", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def redirect_privacy_policy():
+    return RedirectResponse(url=f"{BASE_URL}/privacy", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
 @router.api_route("/terms-of-use", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def get_terms_page():
     base_html = load_base_index_html()
@@ -353,6 +358,11 @@ def get_terms_page():
 
     rendered = _render_page_shell(base_html, title, desc, canonical, "index, follow", body)
     return HTMLResponse(content=rendered, status_code=status.HTTP_200_OK)
+
+
+@router.api_route("/terms", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def redirect_terms():
+    return RedirectResponse(url=f"{BASE_URL}/terms-of-use", status_code=status.HTTP_301_MOVED_PERMANENTLY)
 
 
 @router.api_route("/advertise", methods=["GET", "HEAD"], response_class=HTMLResponse)
