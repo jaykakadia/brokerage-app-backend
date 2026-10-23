@@ -283,7 +283,11 @@ GUIDES = [
 
 
 def seed_blogs(db_url: str):
-    engine = create_engine(db_url)
+    connect_args = {}
+    if "postgresql" in db_url:
+        connect_args = {"prepare_threshold": None}
+
+    engine = create_engine(db_url, connect_args=connect_args, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = SessionLocal()
 
@@ -292,8 +296,11 @@ def seed_blogs(db_url: str):
 
     try:
         now = datetime.now(timezone.utc)
+        # Fetch all existing blogs in one query to avoid prepared statement collisions in pooled connections
+        existing_blogs = {b.permalink: b for b in session.query(Blog).all()}
+
         for g in GUIDES:
-            existing = session.query(Blog).filter(Blog.permalink == g["permalink"]).first()
+            existing = existing_blogs.get(g["permalink"])
             if existing:
                 existing.title = g["title"]
                 existing.category = g["category"]
@@ -326,6 +333,7 @@ def seed_blogs(db_url: str):
         raise
     finally:
         session.close()
+
 
 
 if __name__ == "__main__":
