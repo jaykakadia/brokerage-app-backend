@@ -129,8 +129,8 @@ def load_base_index_html() -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Property in Palwal, Faridabad & NCR | TradeCall India</title>
-  <meta name="description" content="Buy, sell or rent flats, plots, houses and commercial property with zero brokerage on TradeCall India." />
+  <title>Buy, Sell & Rent Property - TradeCall India</title>
+  <meta name="description" content="Buy, sell or rent flats, plots, houses and commercial property all over India with zero brokerage. Contact verified owners directly." />
 </head>
 <body>
   <div id="root"></div>
@@ -241,14 +241,13 @@ def get_home_page(db: Session = Depends(get_db)):
     Organization + WebSite Schema, and crawlable SSR markup inside #root.
     """
     base_html = load_base_index_html()
-    title = "Property in Palwal, Faridabad & NCR | TradeCall India"
+    title = "Buy, Sell & Rent Property - TradeCall India"
     description = (
-        "Buy, sell or rent flats, plots, houses and commercial property in Palwal, "
-        "Faridabad and the NCR with zero brokerage. Contact verified owners directly "
-        "and find local businesses on TradeCall India."
+        "Buy, sell or rent flats, plots, houses and commercial property all over India "
+        "with zero brokerage. Contact verified owners directly."
     )
     canonical = f"{BASE_URL}/"
-    h1_text = "Buy, Rent & Sell Property in Palwal & NCR"
+    h1_text = "Buy, Sell & Rent Property"
 
     html = base_html
 
@@ -305,7 +304,7 @@ def get_home_page(db: Session = Depends(get_db)):
         },
         {
             "question": "Where is TradeCall India located and how can I get support?",
-            "answer": "TradeCall India is based in Village Joharkhera, PO Mandkola, Palwal, Haryana 121102. For customer assistance, you can call or WhatsApp our support desk at +91 9992292828."
+            "answer": "TradeCall India is based in Palwal, Haryana. For customer assistance, you can call or WhatsApp our support desk at +91 9992292828."
         }
     ]
 
@@ -320,7 +319,7 @@ def get_home_page(db: Session = Depends(get_db)):
                 "telephone": "+91 9992292828",
                 "address": {
                     "@type": "PostalAddress",
-                    "streetAddress": "Village Joharkhera, PO Mandkola",
+                    "streetAddress": "Palwal",
                     "addressLocality": "Palwal",
                     "addressRegion": "Haryana",
                     "postalCode": "121102",
@@ -395,7 +394,7 @@ def get_home_page(db: Session = Depends(get_db)):
           <h2>Verification Policy & Direct Contact Guarantee</h2>
           <p>{verification_note}</p>
           <p><strong>Customer Assistance & WhatsApp:</strong> <a href="tel:+919992292828">+91 9992292828</a></p>
-          <p><strong>Registered Office:</strong> Village Joharkhera, PO Mandkola, Palwal, Haryana 121102</p>
+          <p><strong>Registered Office:</strong> Palwal, Haryana</p>
         </section>
       </header>
       <section>

@@ -180,8 +180,8 @@ def test_single_canonical_count_on_all_pages(client: TestClient, db_session: Ses
     home_canonicals = re.findall(r'<link\b[^>]*\brel=["\']canonical["\']', res_home.text, re.IGNORECASE)
     assert len(home_canonicals) == 1
     assert '<link rel="canonical" href="https://tradecall.in/" />' in res_home.text
-    assert "<title>Property in Palwal, Faridabad & NCR | TradeCall India</title>" in res_home.text
-    assert "<h1>Buy, Rent & Sell Property in Palwal & NCR</h1>" in res_home.text
+    assert "<title>Buy, Sell & Rent Property - TradeCall India</title>" in res_home.text
+    assert "<h1>Buy, Sell & Rent Property</h1>" in res_home.text
 
     # 2. Slug listing page "/<city>/<slug>/TC011P-<id>"
     res_slug = client.get(f"/sector-42/4-bhk-penthouse-in-central-park/TC011P-{listing.id}")

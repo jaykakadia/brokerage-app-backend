@@ -17,7 +17,7 @@ catch_all_router = APIRouter(tags=["Catch-All 404"])
 
 BASE_URL = "https://tradecall.in"
 PHONE = "+91 9992292828"
-ADDRESS = "Village Joharkhera, PO Mandkola, Palwal, Haryana 121102"
+ADDRESS = "Palwal, Haryana"
 
 
 def _render_page_shell(
@@ -100,7 +100,7 @@ def get_about_page():
         "telephone": PHONE,
         "address": {
             "@type": "PostalAddress",
-            "streetAddress": "Village Joharkhera, PO Mandkola",
+            "streetAddress": "Palwal",
             "addressLocality": "Palwal",
             "addressRegion": "Haryana",
             "postalCode": "121102",
@@ -149,7 +149,7 @@ def get_contact_page():
         },
         "address": {
             "@type": "PostalAddress",
-            "streetAddress": "Village Joharkhera, PO Mandkola",
+            "streetAddress": "Palwal",
             "addressLocality": "Palwal",
             "addressRegion": "Haryana",
             "postalCode": "121102",
