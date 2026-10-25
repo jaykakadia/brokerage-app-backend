@@ -54,7 +54,7 @@ def test_listing_meta_injection_and_404(client: TestClient, db_session: Session)
     assert "text/html" in res.headers["content-type"]
     body = res.text
 
-    assert "3 BHK Luxury Villa for Sale in Sector 2, Palwal" in body
+    assert "3 BHK Luxury Villa in Sector 2" in body
     assert 'meta name="description"' in body
     assert "₹ 75 Lac" in body
     assert f'link rel="canonical" href="https://tradecall.in/sector-2/3-bhk-luxury-villa-in-sector-2/TC011P-{listing.id}"' in body
@@ -197,3 +197,88 @@ def test_single_canonical_count_on_all_pages(client: TestClient, db_session: Ses
     assert len(city_canonicals) == 1
     assert '<link rel="canonical" href="https://tradecall.in/properties/mumbai" />' in res_city.text
     assert "<h1>Properties in Mumbai</h1>" in res_city.text
+
+
+def test_non_residential_listings_do_not_inject_bhk(db_session: Session):
+    from app.routers.listing_pages import compute_listing_seo_title
+
+    # 1. Agriculture listing with dirty 2BHK in form_data
+    agri_listing = Listing(
+        id=7771,
+        user_id=1,
+        title="Agriculture Land for Sale on 33 ft Road, Sarai Khatela Palwal",
+        location="Sarai Khatela, Palwal, Haryana",
+        price=42500000.0,
+        status="approved",
+        form_data={
+            "propType": "agriculture",
+            "bhk": "2BHK",
+            "locality": "Sarai Khatela",
+            "city": "Palwal",
+            "forWhat": "sale"
+        }
+    )
+    agri_title = compute_listing_seo_title(agri_listing, db_session)
+    assert "2BHK" not in agri_title
+    assert "Agriculture Land for Sale on 33 ft Road, Sarai Khatela Palwal - ₹ 4.25 Cr | TradeCall India" == agri_title
+
+    # 2. Commercial listing with dirty 2BHK in form_data
+    comm_listing = Listing(
+        id=7772,
+        user_id=1,
+        title="Commercial Property for Sale in Minar Gate, Palwal",
+        location="Minar Gate, Palwal, Haryana",
+        price=12000000.0,
+        status="approved",
+        form_data={
+            "propType": "commercial",
+            "bhk": "2BHK",
+            "locality": "Minar Gate",
+            "city": "Palwal",
+            "forWhat": "sale"
+        }
+    )
+    comm_title = compute_listing_seo_title(comm_listing, db_session)
+    assert "2BHK" not in comm_title
+    assert "Commercial Property for Sale in Minar Gate, Palwal - ₹ 1.2 Cr | TradeCall India" == comm_title
+
+    # 3. Plot listing with dirty 2BHK in form_data
+    plot_listing = Listing(
+        id=7773,
+        user_id=1,
+        title="Plot for Sale in HUDA Sector, Palwal",
+        location="HUDA Sector, Palwal, Haryana",
+        price=14000000.0,
+        status="approved",
+        form_data={
+            "propType": "plot",
+            "bhk": "2BHK",
+            "plotArea": "100",
+            "plotUnit": "Sq.Yd",
+            "locality": "HUDA Sector",
+            "city": "Palwal",
+            "forWhat": "sale"
+        }
+    )
+    plot_title = compute_listing_seo_title(plot_listing, db_session)
+    assert "2BHK" not in plot_title
+    assert "Plot for Sale in HUDA Sector, Palwal - ₹ 1.4 Cr | TradeCall India" == plot_title
+
+    # 4. Residential Flat should keep BHK
+    flat_listing = Listing(
+        id=7774,
+        user_id=1,
+        title="3BHK Flat for Sale in Tarang Residency, Palwal",
+        location="Tarang Residency, Palwal, Haryana",
+        price=8335000.0,
+        status="approved",
+        form_data={
+            "propType": "flat",
+            "bhk": "3BHK",
+            "locality": "Tarang Residency",
+            "city": "Palwal",
+            "forWhat": "sale"
+        }
+    )
+    flat_title = compute_listing_seo_title(flat_listing, db_session)
+    assert "3BHK Flat for Sale in Tarang Residency, Palwal - ₹ 83.35 Lac | TradeCall India" == flat_title

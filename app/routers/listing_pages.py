@@ -73,51 +73,38 @@ def invalidate_title_cache() -> None:
 
 def compute_base_seo_title(listing: Any) -> str:
     """
-    Computes the base SEO title (without TC011P code or brand suffix):
-    {Size/BHK} {Type} for {Sale/Rent} in {Locality}, {City} - {Price}
+    Computes base SEO title directly using listing.title and price:
+    {listing.title} - {price}
     """
     form_data = getattr(listing, "form_data", None) or {}
     if not isinstance(form_data, dict):
         form_data = {}
 
-    location = getattr(listing, "location", "") or ""
     price = getattr(listing, "price", 0.0)
-    raw_title = getattr(listing, "title", "") or ""
+    raw_title = (getattr(listing, "title", "") or "").strip()
 
-    city = _listing_city(location, form_data) or "Palwal"
-    locality = form_data.get("locality") or (location.split(",")[0].strip() if location else city)
+    # Business listings
     b_name = form_data.get("businessName")
     is_business = form_data.get("kind") == "business" or bool(b_name and not form_data.get("propType") and not price)
-
     if is_business:
+        location = getattr(listing, "location", "") or ""
+        city = _listing_city(location, form_data) or "Palwal"
         cat_name = form_data.get("category") or form_data.get("categoryName") or "Business"
         return f"{b_name or raw_title or 'Business'} - {cat_name} in {city}"
 
-    bhk = form_data.get("bhk") or ""
-    area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
-    unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
-    size_part = bhk
-    if not size_part and area:
-        size_part = f"{area} {unit}".strip()
-
-    if not size_part and raw_title:
-        bhk_match = re.search(r'(\d+\s*BHK\+?)', raw_title, re.IGNORECASE)
-        if bhk_match:
-            size_part = bhk_match.group(1).upper()
-
-    prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
-    if prop_type == "Property" and raw_title:
-        for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
-            if pt.lower() in raw_title.lower():
-                prop_type = pt
-                break
-
-    for_what = (form_data.get("forWhat") or "sale").title()
-    type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
-    loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
     price_str = format_price(price)
     price_clause = f" - {price_str}" if price_str else ""
-    return f"{type_clause} for {for_what} {loc_clause}{price_clause}"
+
+    if raw_title:
+        clean_title = re.sub(r"\s*\|\s*TradeCall.*$", "", raw_title, flags=re.IGNORECASE).strip()
+        return f"{clean_title}{price_clause}"
+
+    location = getattr(listing, "location", "") or ""
+    city = _listing_city(location, form_data) or "Palwal"
+    locality = form_data.get("locality") or (location.split(",")[0].strip() if location else city)
+    for_what = (form_data.get("forWhat") or "sale").title()
+    loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
+    return f"Property for {for_what} {loc_clause}{price_clause}"
 
 
 def get_duplicate_seo_titles(db: Session, ttl: float = 60.0) -> set:
@@ -280,35 +267,12 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     if form_data.get("category"):
         cat_name = str(form_data.get("category"))
 
-    bhk = form_data.get("bhk") or ""
-    area = form_data.get("area") or form_data.get("plotArea") or form_data.get("agriArea") or ""
-    unit = form_data.get("unit") or form_data.get("plotUnit") or form_data.get("agriUnit") or ""
-    size_part = bhk
-    if not size_part and area:
-        size_part = f"{area} {unit}".strip()
-
-    if not size_part and listing.title:
-        bhk_match = re.search(r'(\d+\s*BHK\+?)', listing.title, re.IGNORECASE)
-        if bhk_match:
-            size_part = bhk_match.group(1).upper()
-
-    prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
-    if prop_type == "Property" and listing.title:
-        for pt in ["Luxury Villa", "Villa", "Builder Floor", "Flat", "Apartment", "House", "Plot", "Shop", "Office", "Agricultural Land", "Land"]:
-            if pt.lower() in listing.title.lower():
-                prop_type = pt
-                break
-
-    for_what = (form_data.get("forWhat") or "sale").title()
-    type_clause = f"{size_part} {prop_type}".strip() if size_part else prop_type
-    loc_clause = f"in {locality}, {city}" if locality != city else f"in {city}"
-
     unique_code = f"TC011P-{listing.id}"
     full_title = compute_listing_seo_title(listing, db)
     if is_business:
         headline = f"{b_name or 'Business'} - {cat_name} in {city}"
     else:
-        headline = f"{type_clause} for {for_what} {loc_clause}"
+        headline = listing.title or "Property Listing"
 
     summary_parts = [p for p in [price_str, listing.location] if p]
     summary_str = " · ".join(summary_parts)
@@ -452,9 +416,14 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
             return
         specs.append(f'<tr><th>{html_lib.escape(label)}</th><td>{html_lib.escape(s)}</td></tr>')
 
+    raw_pt = str(form_data.get("propType") or "").lower().strip()
+    is_residential = raw_pt in ("flat", "house") or any(
+        w in (listing.title or "").lower() for w in ("flat", "house", "villa", "builder floor", "apartment", "penthouse")
+    )
+
     if form_data.get("propType"):
         _add_spec("Property Type", str(form_data.get("propType")).replace("-", " ").title())
-    if form_data.get("bhk"):
+    if is_residential and form_data.get("bhk"):
         _add_spec("Configuration", form_data.get("bhk"))
     if form_data.get("area"):
         _add_spec("Super / Carpet Area", f"{form_data.get('area')} {form_data.get('unit', '')}".strip())
@@ -464,9 +433,9 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         _add_spec("Land Area", f"{form_data.get('agriArea')} {form_data.get('agriUnit', '')}".strip())
     if form_data.get("builtArea"):
         _add_spec("Built-up Area", f"{form_data.get('builtArea')} {form_data.get('builtUnit', '')}".strip())
-    if form_data.get("bath"):
+    if is_residential and form_data.get("bath"):
         _add_spec("Bathrooms", form_data.get("bath"))
-    if form_data.get("furnish"):
+    if is_residential and form_data.get("furnish"):
         _add_spec("Furnishing", form_data.get("furnish"))
     if form_data.get("facing"):
         _add_spec("Facing", form_data.get("facing"))

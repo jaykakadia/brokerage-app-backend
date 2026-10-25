@@ -345,9 +345,9 @@ class TestApiValidationIntegration:
         assert f"(TC011P-{l1.id})" not in title_l1_diff
         assert f"(TC011P-{l2.id})" not in title_l2_diff
 
-        # Same final SEO title (same size, locality, city, and price 65 Lac) -> collision code added!
+        # Same final SEO title (same title and price 65 Lac) -> collision code added!
         l3 = Listing(
-            title="Another 3 BHK Villa in Sector 2",  # raw title differs, but final SEO title is identical
+            title="3 BHK Luxury Villa in Sector 2",  # identical to l1
             price=6500000.0,
             location="Sector 2, Palwal",
             owner_name="Alice Doe",
