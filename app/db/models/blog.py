@@ -17,3 +17,4 @@ class Blog(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(50), default="published", nullable=False, index=True)  # published, draft
     author: Mapped[str] = mapped_column(String(150), default="TradeCall Team", nullable=False)
     image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    meta_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

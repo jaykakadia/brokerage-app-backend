@@ -12,6 +12,7 @@ class BlogBase(BaseModel):
     status: str = "published"  # published, draft
     author: str = "TradeCall Team"
     image_url: Optional[str] = None
+    meta_description: Optional[str] = None
 
 
 class BlogCreate(BlogBase):
@@ -27,6 +28,7 @@ class BlogUpdate(BaseModel):
     status: Optional[str] = None
     author: Optional[str] = None
     image_url: Optional[str] = None
+    meta_description: Optional[str] = None
 
 
 class BlogRead(BlogBase):

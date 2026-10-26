@@ -1,16 +1,32 @@
 import random
 import re
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect, text
 
 from app.core.dependencies import get_current_admin, get_db
+from app.db.session import engine
 from app.db.models.user import User
 from app.db.models.blog import Blog
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.blog import BlogRead, BlogCreate, BlogUpdate
 
 router = APIRouter(prefix="/api/v1/blogs", tags=["Blogs"])
+
+
+def ensure_blog_meta_column():
+    try:
+        inspector = inspect(engine)
+        if "blogs" in inspector.get_table_names():
+            cols = [c["name"] for c in inspector.get_columns("blogs")]
+            if "meta_description" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE blogs ADD COLUMN meta_description TEXT"))
+    except Exception as e:
+        print("ensure_blog_meta_column warning:", e)
+
+ensure_blog_meta_column()
 
 
 def slugify(text: str) -> str:
@@ -119,8 +135,10 @@ def create_or_update_blog(
         blog.tags = req.tags
         blog.status = status_clean
         blog.author = req.author or admin.name
-        if req.image_url:
+        if req.image_url is not None:
             blog.image_url = req.image_url
+        if req.meta_description is not None:
+            blog.meta_description = req.meta_description
         db.commit()
         db.refresh(blog)
     else:
@@ -137,13 +155,47 @@ def create_or_update_blog(
             tags=req.tags,
             status=status_clean,
             author=req.author or admin.name,
-            image_url=req.image_url
+            image_url=req.image_url,
+            meta_description=req.meta_description,
         )
         db.add(blog)
         db.commit()
         db.refresh(blog)
 
     return APIResponse(status="success", data=BlogRead.model_validate(blog))
+
+
+@router.post("/admin/upload-image", response_model=APIResponse[dict])
+async def upload_blog_image(
+    file: UploadFile = File(...),
+    admin: User = Depends(get_current_admin),
+):
+    """Admin endpoint to upload blog thumbnail/content image."""
+    from app.services.storage_service import storage_service, ALLOWED_EXTENSIONS
+    import os, uuid
+    from starlette.concurrency import run_in_threadpool
+
+    filename = file.filename or "image.jpg"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file extension '{ext}'. Allowed: {list(ALLOWED_EXTENSIONS)}"
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
+
+    detected_ext = storage_service._validate_image_bytes(content[:16]) or "jpg"
+    content, detected_ext = await run_in_threadpool(storage_service._optimize_image, content, detected_ext)
+
+    key = f"blogs/{uuid.uuid4().hex}.{detected_ext}"
+    mime_type = "image/jpeg" if detected_ext == "jpg" else f"image/{detected_ext}"
+    await run_in_threadpool(storage_service.backend.save, key, content, mime_type)
+
+    url = f"/uploads/{key}"
+    return APIResponse(status="success", data={"url": url, "key": key})
 
 
 @router.delete("/admin/{blog_id}", response_model=MessageResponse)
