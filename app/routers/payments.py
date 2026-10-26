@@ -125,8 +125,8 @@ def create_order(
         listing = db.query(Listing).filter(Listing.id == req.listing_id).first() if req.listing_id else None
         if not listing or listing.user_id != current_user.id:
             raise HTTPException(status_code=400, detail="Choose one of your listings to feature.")
-        if listing.status != "approved":
-            raise HTTPException(status_code=400, detail="Only approved listings can be featured.")
+        if listing.status not in ("approved", "pending"):
+            raise HTTPException(status_code=400, detail="Only active or pending listings can be featured.")
         listing_id = listing.id
 
     app_id, secret_key, environment = _get_active_cashfree_credentials(db)

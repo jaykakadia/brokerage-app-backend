@@ -139,8 +139,9 @@ def test_featured_plan_features_one_listing(client, db_session, test_user, admin
     leads_plan = Plan(name="Leads Basic", price=499.0, listing_limit=5, leads_count=5, duration_days=30, status="active")
     mine = Listing(user_id=test_user.id, title="My Plot", location="Palwal", owner_name="John", status="approved")
     pending = Listing(user_id=test_user.id, title="Pending Plot", location="Palwal", owner_name="John", status="pending")
+    suspended = Listing(user_id=test_user.id, title="Suspended Plot", location="Palwal", owner_name="John", status="suspended")
     others = Listing(user_id=admin_user.id, title="Admin Plot", location="Palwal", owner_name="Admin", status="approved")
-    db_session.add_all([featured_plan, leads_plan, mine, pending, others])
+    db_session.add_all([featured_plan, leads_plan, mine, pending, suspended, others])
     db_session.commit()
 
     # Plans are listed by type; the default stays "leads" for existing callers
@@ -152,10 +153,15 @@ def test_featured_plan_features_one_listing(client, db_session, test_user, admin
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
     initial_leads = test_user.leads_balance
 
-    # A featured plan needs one of the user's own approved listings
-    for bad in ({}, {"listing_id": others.id}, {"listing_id": pending.id}):
+    # A featured plan needs one of the user's own approved or pending listings
+    for bad in ({}, {"listing_id": others.id}, {"listing_id": suspended.id}):
         res = client.post("/api/v1/payments/create-order", json={"plan_id": featured_plan.id, **bad})
         assert res.status_code == 400
+
+    # User can feature their pending listing right after posting
+    pending_order_id = client.post("/api/v1/payments/create-order",
+                                   json={"plan_id": featured_plan.id, "listing_id": pending.id}).json()["order_id"]
+    assert pending_order_id
 
     order_id = client.post("/api/v1/payments/create-order",
                            json={"plan_id": featured_plan.id, "listing_id": mine.id}).json()["order_id"]
