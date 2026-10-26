@@ -1,8 +1,9 @@
+from datetime import datetime
 import random
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, extract
 
 from app.core.dependencies import get_current_admin, get_db
 from app.db.models.user import User
@@ -42,19 +43,33 @@ def get_ref_codes(
 
 @router.get("", response_model=APIResponse[List[EmployeeRead]])
 def list_employees(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Admin endpoint to list all field associates with listing counts."""
+    """Admin endpoint to list all field associates with optional date-range listing counts."""
     employees = db.query(Employee).order_by(Employee.id.desc()).all()
     
     # Calculate listing counts per reference code
-    counts = dict(
-        db.query(Listing.reference_code, func.count(Listing.id))
-        .filter(Listing.reference_code.isnot(None), Listing.status != "deleted")
-        .group_by(Listing.reference_code)
-        .all()
+    listing_q = db.query(Listing.reference_code, func.count(Listing.id)).filter(
+        Listing.reference_code.isnot(None),
+        Listing.status != "deleted"
     )
+    if start_date:
+        try:
+            sd = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            listing_q = listing_q.filter(Listing.created_at >= sd)
+        except Exception:
+            listing_q = listing_q.filter(Listing.created_at >= start_date)
+    if end_date:
+        try:
+            ed = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            listing_q = listing_q.filter(Listing.created_at <= ed)
+        except Exception:
+            listing_q = listing_q.filter(Listing.created_at <= end_date)
+
+    counts = dict(listing_q.group_by(Listing.reference_code).all())
 
     result = []
     for emp in employees:
@@ -72,6 +87,51 @@ def list_employees(
         result.append(emp_read)
 
     return APIResponse(status="success", data=result)
+
+
+@router.get("/payout-summary", response_model=APIResponse[dict])
+def get_payout_summary(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get monthly aggregation stats for all associates."""
+    q_monthly = (
+        db.query(
+            Listing.reference_code,
+            extract('year', Listing.created_at).label('year'),
+            extract('month', Listing.created_at).label('month'),
+            func.count(Listing.id).label('count')
+        )
+        .filter(Listing.reference_code.isnot(None), Listing.status != 'deleted')
+        .group_by(
+            Listing.reference_code,
+            extract('year', Listing.created_at),
+            extract('month', Listing.created_at)
+        )
+        .order_by(
+            extract('year', Listing.created_at).desc(),
+            extract('month', Listing.created_at).desc()
+        )
+        .all()
+    )
+
+    month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    breakdown = []
+    for row in q_monthly:
+        y = int(row.year) if row.year is not None else 0
+        m = int(row.month) if row.month is not None else 0
+        m_label = f"{month_names[m]} {y}" if 1 <= m <= 12 else f"{m}/{y}"
+        breakdown.append({
+            "reference_code": row.reference_code,
+            "year": y,
+            "month": m,
+            "month_label": m_label,
+            "count": int(row.count)
+        })
+
+    return APIResponse(status="success", data={
+        "monthly_breakdown": breakdown
+    })
 
 
 @router.get("/{employee_id}", response_model=APIResponse[EmployeeRead])
