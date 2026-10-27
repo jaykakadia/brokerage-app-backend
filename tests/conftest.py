@@ -50,6 +50,8 @@ if not is_safe_test_db(TEST_DB_URL):
     )
 
 settings.DATABASE_URL = TEST_DB_URL
+settings.COOKIE_SECURE = False
+settings.COOKIE_DOMAIN = None
 
 if TEST_DB_URL.startswith("sqlite"):
     engine = create_engine(
@@ -73,6 +75,8 @@ def setup_test_environment():
     settings.SMTP_MOCK = True
     settings.CASHFREE_MOCK = True
     settings.BREVO_API_KEY = ""  # tests must never send real email
+    settings.COOKIE_SECURE = False
+    settings.COOKIE_DOMAIN = None
     os.makedirs(os.path.join(test_upload, "listings"), exist_ok=True)
     yield
     import shutil

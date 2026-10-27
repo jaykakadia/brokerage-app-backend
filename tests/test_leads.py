@@ -109,7 +109,8 @@ def test_contact_and_links_locked_until_unlocked(client, test_user, owner_and_li
         res = client.get(path)
         assert res.status_code == 200
         data = res.json()["data"]
-        return (data if isinstance(data, dict) else next(l for l in data if l["id"] == listing.id))["form_data"]
+        item = data if isinstance(data, dict) else next(l for l in data if l["id"] == listing.id)
+        return item.get("form_data") or {}
 
     # Anonymous visitors see the listing details but not the links
     fd = form_data(f"/api/v1/listings/{listing.id}")
