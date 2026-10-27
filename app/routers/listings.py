@@ -1,9 +1,12 @@
 import os
 import json
+import math
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func, or_, cast, String
 
 from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
@@ -25,6 +28,84 @@ router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
 # Contact details and links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
 LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+
+
+class ListingCache:
+    """Thread-safe in-memory cache with TTL for public approved listings."""
+    def __init__(self, ttl: float = 60.0):
+        self._cache: dict = {}
+        self._lock = threading.Lock()
+        self.ttl = ttl
+
+    def get(self, key: str) -> Optional[dict]:
+        with self._lock:
+            entry = self._cache.get(key)
+            if not entry:
+                return None
+            val, expires_at = entry
+            if time.time() > expires_at:
+                del self._cache[key]
+                return None
+            return val
+
+    def set(self, key: str, val: dict) -> None:
+        with self._lock:
+            now = time.time()
+            if len(self._cache) > 500:
+                self._cache = {k: v for k, v in self._cache.items() if v[1] > now}
+            self._cache[key] = (val, now + self.ttl)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+
+public_listings_cache = ListingCache(ttl=60.0)
+
+
+def _listing_for_card(listing: Listing, is_admin: bool = False) -> dict:
+    """Lightweight listing representation containing only the fields a card displays."""
+    from app.routers.listing_pages import compute_listing_seo_title
+    first_image = listing.images[0].file_path if listing.images else None
+    prop_type = None
+    kind = "property"
+    category_name = None
+    deal = None
+    if isinstance(listing.form_data, dict):
+        prop_type = listing.form_data.get("propType")
+        kind = listing.form_data.get("kind", "property")
+        category_name = listing.form_data.get("categoryName")
+        deal = listing.form_data.get("deal") or listing.form_data.get("purpose") or listing.form_data.get("for_what")
+
+    city = _listing_city(listing.location, listing.form_data)
+
+    card = {
+        "id": listing.id,
+        "user_id": listing.user_id,
+        "title": listing.title,
+        "location": listing.location,
+        "city": city,
+        "price": float(listing.price) if listing.price is not None else 0.0,
+        "owner_name": listing.owner_name,
+        "owner_role": listing.owner_role,
+        "status": listing.status,
+        "verified": listing.verified,
+        "is_featured": listing.is_featured,
+        "featured_until": listing.featured_until.isoformat() if listing.featured_until else None,
+        "first_image_url": first_image,
+        "image_url": first_image,
+        "images": [{"file_path": first_image}] if first_image else [],
+        "prop_type": prop_type,
+        "kind": kind,
+        "deal": deal,
+        "category_name": category_name,
+        "reference_code": listing.reference_code,
+        "created_at": listing.created_at.isoformat() if listing.created_at else None,
+        "seo_title": compute_listing_seo_title(listing)
+    }
+    if is_admin:
+        card["assigned_email"] = listing.assigned_email
+    return card
 
 
 def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool = False, db: Optional[Session] = None) -> dict:
@@ -59,6 +140,7 @@ def _expire_featured(db: Session) -> None:
     ).update({Listing.is_featured: False, Listing.featured_until: None}, synchronize_session=False)
     if expired:
         db.commit()
+        public_listings_cache.clear()
 
 
 @router.get("/counts", response_model=ListingCountsResponse)
@@ -94,7 +176,7 @@ def get_listing_counts(
 
 @router.get("/stats")
 def get_public_stats(db: Session = Depends(get_db)):
-    """Public endpoint — returns site-wide stats for the login page hero."""
+    """Public endpoint — returns site-wide stats for the login page hero and browse sections."""
     _expire_featured(db)
     active = db.query(func.count(Listing.id)).filter(Listing.status == "approved").scalar() or 0
     featured = db.query(func.count(Listing.id)).filter(
@@ -103,12 +185,19 @@ def get_public_stats(db: Session = Depends(get_db)):
     # One listing's location reads "Palwal", "Palwal, Haryana" or "Omaxe City, Palwal, Haryana",
     # so cities are counted by the city name, not the distinct location text
     approved = db.query(Listing.location, Listing.form_data).filter(Listing.status == "approved").all()
-    cities = {c.lower() for c in (_listing_city(loc, fd) for loc, fd in approved) if c}
+    city_counter: dict[str, int] = {}
+    for loc, fd in approved:
+        c = _listing_city(loc, fd)
+        if c:
+            c_name = c.title().strip()
+            city_counter[c_name] = city_counter.get(c_name, 0) + 1
+    city_counts = [{"name": name, "count": count} for name, count in sorted(city_counter.items(), key=lambda x: -x[1])]
     users = db.query(func.count(User.id)).scalar() or 0
     return {
         "active_listings": active,
         "featured_listings": featured,
-        "cities_covered": len(cities),
+        "cities_covered": len(city_counts),
+        "city_counts": city_counts,
         "registered_users": users,
     }
 
@@ -122,11 +211,40 @@ def get_listings(
     ref_code: Optional[str] = Query(None),
     ref_name: Optional[str] = Query(None),
     user_id: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(12, ge=1, le=1000),
+    prop_type: Optional[str] = Query(None),
+    deal: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None),
+    max_price: Optional[float] = Query(None),
+    verified_only: Optional[bool] = Query(None),
+    new_only: Optional[bool] = Query(None),
+    is_featured: Optional[bool] = Query(None),
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     _expire_featured(db)
-    query = db.query(Listing).outerjoin(User, Listing.user_id == User.id)
+
+    is_admin = bool(user and user.role.lower() == "admin")
+
+    # In-memory caching for public approved listing requests
+    is_cacheable = (
+        user is None
+        and user_id is None
+        and (status is None or status.lower() == "approved")
+    )
+    cache_key = (
+        f"st={status}&p={page}&l={limit}&c={city}&s={search}&k={kind}&rc={ref_code}&rn={ref_name}&"
+        f"pt={prop_type}&d={deal}&min={min_price}&max={max_price}&vo={verified_only}&no={new_only}&f={is_featured}"
+    )
+
+    if is_cacheable:
+        cached = public_listings_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    # Query with selectinload to resolve N+1 image query bottleneck in a single query
+    query = db.query(Listing).options(selectinload(Listing.images)).outerjoin(User, Listing.user_id == User.id)
 
     # Filter by user_id if requested (e.g. My Listings in Account)
     if user_id:
@@ -146,13 +264,17 @@ def get_listings(
     # Status filter
     if status and status.lower() != "all":
         query = query.filter(Listing.status == status.lower())
-    elif not user_id and (not user or user.role.lower() != "admin"):
+    elif not user_id and not is_admin:
         # Unauthenticated or non-admin users default to approved when not querying specific user
         query = query.filter(Listing.status == "approved")
 
-    # City filter
+    # City filter (supports single or comma-separated multiple cities)
     if city:
-        query = query.filter(Listing.location.ilike(f"%{city.strip()}%"))
+        city_parts = [c.strip() for c in city.split(",") if c.strip()]
+        if len(city_parts) == 1:
+            query = query.filter(Listing.location.ilike(f"%{city_parts[0]}%"))
+        elif len(city_parts) > 1:
+            query = query.filter(or_(*[Listing.location.ilike(f"%{c}%") for c in city_parts]))
 
     # Search filter (title / description / location / user name, email, phone / owner / ID)
     if search:
@@ -185,11 +307,90 @@ def get_listings(
     if ref_code:
         query = query.filter(Listing.reference_code == ref_code.strip())
 
-    listings = query.order_by(Listing.id.desc()).all()
+    # Property type filter
+    if prop_type:
+        pt = prop_type.strip().lower()
+        conds = [
+            func.json_extract_path_text(Listing.form_data, "propType").ilike(f"%{pt}%"),
+            Listing.title.ilike(f"%{pt}%")
+        ]
+        if pt == "flat":
+            conds.extend([
+                func.json_extract_path_text(Listing.form_data, "propType").in_(["apartment", "builder_floor"]),
+                Listing.title.ilike("%apartment%"),
+                Listing.title.ilike("%builder floor%")
+            ])
+        elif pt == "house":
+            conds.extend([
+                func.json_extract_path_text(Listing.form_data, "propType").in_(["villa", "kothi"]),
+                Listing.title.ilike("%villa%"),
+                Listing.title.ilike("%kothi%"),
+                Listing.title.ilike("%bungalow%")
+            ])
+        elif pt == "plot":
+            conds.extend([
+                func.json_extract_path_text(Listing.form_data, "propType") == "plots",
+                Listing.title.ilike("%plots%")
+            ])
+        elif pt == "agriculture":
+            conds.extend([
+                func.json_extract_path_text(Listing.form_data, "propType").in_(["agricultural", "farm_land"]),
+                Listing.title.ilike("%agricultural%"),
+                Listing.title.ilike("%farm land%")
+            ])
+        elif pt == "commercial":
+            conds.extend([
+                func.json_extract_path_text(Listing.form_data, "propType").in_(["shop", "office", "showroom", "warehouse"]),
+                Listing.title.ilike("%shop%"),
+                Listing.title.ilike("%office%"),
+                Listing.title.ilike("%showroom%"),
+                Listing.title.ilike("%warehouse%")
+            ])
+        query = query.filter(or_(*conds))
+
+    # Deal filter (sale, rent, buy)
+    if deal:
+        d = deal.strip().lower()
+        query = query.filter(
+            or_(
+                func.json_extract_path_text(Listing.form_data, "deal").ilike(f"%{d}%"),
+                func.json_extract_path_text(Listing.form_data, "purpose").ilike(f"%{d}%"),
+                func.json_extract_path_text(Listing.form_data, "for_what").ilike(f"%{d}%"),
+                Listing.title.ilike(f"%{d}%")
+            )
+        )
+
+    # Price range
+    if min_price is not None:
+        query = query.filter(Listing.price >= min_price)
+    if max_price is not None:
+        query = query.filter(Listing.price <= max_price)
+
+    # Verified filter
+    if verified_only:
+        query = query.filter(Listing.verified == 1)
+
+    # New only (posted today UTC)
+    if new_only:
+        cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        query = query.filter(Listing.created_at >= cutoff)
+
+    # Featured filter
+    if is_featured is not None:
+        query = query.filter(Listing.is_featured == is_featured)
+
+    # Total count before pagination
+    total = query.count()
+
+    # Server-side pagination
+    paginated_query = query.order_by(Listing.id.desc())
+    if limit > 0:
+        paginated_query = paginated_query.offset((page - 1) * limit).limit(limit)
+    listings = paginated_query.all()
 
     # Build reference summary counts for admin
     ref_summary = []
-    if user and user.role.lower() == "admin":
+    if is_admin:
         summary_query = db.query(
             Listing.reference_code,
             func.count(Listing.id).label("total")
@@ -197,11 +398,24 @@ def get_listings(
          .group_by(Listing.reference_code).all()
         ref_summary = [{"reference_code": r[0], "total": r[1]} for r in summary_query if r[0]]
 
-    return {
+    # Card fields only for list response: excludes heavy form_data, locked contacts, full image list
+    data = [_listing_for_card(l, is_admin=is_admin) for l in listings]
+
+    total_pages = max(1, math.ceil(total / limit)) if limit > 0 else 1
+    response_payload = {
         "status": "success",
-        "data": [_listing_for_viewer(l, user) for l in listings],
+        "data": data,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
         "ref_summary": ref_summary
     }
+
+    if is_cacheable:
+        public_listings_cache.set(cache_key, response_payload)
+
+    return response_payload
 
 
 @router.get("/{listing_id}", response_model=APIResponse[ListingRead])
@@ -401,6 +615,7 @@ async def create_listing(
 
     db.commit()
     db.refresh(listing)
+    public_listings_cache.clear()
 
     # Dispatch listing confirmation email to the user
     target_email = assign_to_email.strip().lower() if assign_to_email else (current_user.email.strip().lower() if current_user.email else None)
@@ -547,6 +762,7 @@ async def update_listing(
     for path in removed_files:
         storage_service.delete_file(path)
     db.refresh(listing)
+    public_listings_cache.clear()
     return APIResponse(status="success", data=_listing_for_viewer(listing, current_user, db=db))
 
 
@@ -580,6 +796,7 @@ def update_listing_status(
         raise HTTPException(status_code=400, detail=f"Invalid action '{req.action}'.")
 
     db.commit()
+    public_listings_cache.clear()
     return MessageResponse(status="success", message=f"Listing status updated via action '{action}'.")
 
 
@@ -608,6 +825,7 @@ def set_listing_featured(
 
     db.commit()
     db.refresh(listing)
+    public_listings_cache.clear()
     return APIResponse(status="success", data=ListingRead.model_validate(listing))
 
 
@@ -630,4 +848,5 @@ def delete_listing(
 
     db.delete(listing)
     db.commit()
+    public_listings_cache.clear()
     return MessageResponse(status="success", message="Listing deleted successfully.")

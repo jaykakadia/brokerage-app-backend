@@ -243,3 +243,82 @@ def test_search_listings_by_user_details(client, test_user, admin_user):
     s_fmt = client.get(f"/api/v1/listings?search=#{listing_id}").json()["data"]
     assert any(l["id"] == listing_id for l in s_fmt)
 
+
+def test_listings_pagination_caching_and_card_fields(client, admin_user, test_user):
+    """Verify pagination, lightweight card fields, and in-memory cache behavior."""
+    import json
+    from app.routers.listings import public_listings_cache
+
+    # 1. Clear cache upfront
+    public_listings_cache.clear()
+
+    # Create 3 approved listings
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    ids = []
+    for i in range(1, 4):
+        create_res = client.post("/api/v1/listings", data={
+            "title": f"Apartment #{i} in Palwal City",
+            "location": f"Sector {i}, Palwal, Haryana",
+            "price": 1000000 * i,
+            "owner_name": f"Owner {i}",
+            "owner_role": "Owner",
+            "form_data": json.dumps({"kind": "property", "propType": "flat", "city": "Palwal"})
+        })
+        assert create_res.status_code == 200
+        l_id = create_res.json()["data"]["id"]
+        # Approve each
+        client.post(f"/api/v1/listings/{l_id}/status", json={"action": "approve"})
+        ids.append(l_id)
+
+    # Logout so we are an unauthenticated public user
+    client.post("/api/v1/auth/logout")
+
+    # 2. Test pagination: page=1, limit=2
+    res_p1 = client.get("/api/v1/listings?status=approved&page=1&limit=2")
+    assert res_p1.status_code == 200
+    p1_data = res_p1.json()
+    assert p1_data["status"] == "success"
+    assert p1_data["total"] >= 3
+    assert p1_data["page"] == 1
+    assert p1_data["limit"] == 2
+    assert p1_data["total_pages"] >= 2
+    assert len(p1_data["data"]) == 2
+
+    # 3. Test card fields (Requirement 3: no form_data, no locked contact details, only card fields)
+    card_item = p1_data["data"][0]
+    assert "id" in card_item
+    assert "title" in card_item
+    assert "price" in card_item
+    assert "city" in card_item
+    assert "first_image_url" in card_item
+    assert "image_url" in card_item
+    assert "prop_type" in card_item
+    assert "verified" in card_item
+    assert "is_featured" in card_item
+    # Must NOT have raw form_data in list response
+    assert card_item.get("form_data") is None
+    # Must NOT leak assigned_email to public viewer
+    assert card_item.get("assigned_email") is None
+
+    # Detail endpoint MUST have full form_data and details (Requirement 7)
+    detail_res = client.get(f"/api/v1/listings/{ids[0]}")
+    assert detail_res.status_code == 200
+    assert detail_res.json()["data"]["form_data"] is not None
+
+    # 4. Test in-memory cache (Requirement 4)
+    # The first call should have populated the cache
+    cached_entry = public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None")
+    assert cached_entry is not None
+    assert cached_entry["page"] == 1
+
+    # Calling again gets the exact cached data
+    res_p1_cached = client.get("/api/v1/listings?status=approved&page=1&limit=2")
+    assert res_p1_cached.json() == cached_entry
+
+    # 5. Cache invalidation on admin approval / status update
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    client.post(f"/api/v1/listings/{ids[0]}/status", json={"action": "suspended"})
+    # Cache must be cleared immediately
+    assert public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None") is None
+
+

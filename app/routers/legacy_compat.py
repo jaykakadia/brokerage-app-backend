@@ -86,10 +86,31 @@ def legacy_get_listings(
     search: Optional[str] = None,
     ref_code: Optional[str] = None,
     ref_name: Optional[str] = None,
+    page: int = 1,
+    limit: int = 500,
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
-    return listings_get(status, city, search, ref_code, ref_name, user, db)
+    return listings_get(
+        status=status,
+        city=city,
+        search=search,
+        kind=None,
+        ref_code=ref_code,
+        ref_name=ref_name,
+        user_id=None,
+        page=page,
+        limit=limit,
+        prop_type=None,
+        deal=None,
+        min_price=None,
+        max_price=None,
+        verified_only=None,
+        new_only=None,
+        is_featured=None,
+        user=user,
+        db=db
+    )
 
 
 @router.get("/get_listing.php")

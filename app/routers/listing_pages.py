@@ -282,10 +282,15 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
     if not clean_desc:
         # Generated strictly from verified fields without padding or invented details
-        parts = [f"{type_clause} for {for_what}", f"in {locality}, {city}"]
-        if price_str:
-            parts.append(f"priced at {price_str}")
-        clean_desc = f"{' '.join(parts)}. Verified property listing on TradeCall India with zero brokerage."
+        if is_business:
+            clean_desc = f"{b_name or 'Business'} - {cat_name} in {locality}, {city}. Verified business listing on TradeCall India."
+        else:
+            prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
+            for_what = (form_data.get("forWhat") or "sale").lower()
+            parts = [f"{prop_type} for {for_what}", f"in {locality}, {city}"]
+            if price_str:
+                parts.append(f"priced at {price_str}")
+            clean_desc = f"{' '.join(parts)}. Verified property listing on TradeCall India with zero brokerage."
 
     combined_desc = f"{summary_str}. {clean_desc} Contact verified owner directly on TradeCall India." if summary_str else f"{clean_desc} Contact verified owner directly on TradeCall India."
     meta_desc = clean_meta_description(combined_desc, max_len=160)
