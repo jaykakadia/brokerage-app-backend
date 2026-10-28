@@ -62,6 +62,7 @@ class ListingRead(ListingBase):
     created_at: datetime
     seo_title: Optional[str] = None
     images: List[ListingImageRead] = []
+    mobile: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

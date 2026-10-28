@@ -59,6 +59,30 @@ if TEST_DB_URL.startswith("sqlite"):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool
     )
+    from sqlalchemy import event
+    @event.listens_for(engine, "connect")
+    def _sqlite_json_compat(dbapi_connection, connection_record):
+        import json
+        def json_extract_path_text(json_val, *paths):
+            if not json_val:
+                return None
+            if isinstance(json_val, str):
+                try:
+                    data = json.loads(json_val)
+                except Exception:
+                    return None
+            elif isinstance(json_val, dict):
+                data = json_val
+            else:
+                return None
+            cur = data
+            for p in paths:
+                if isinstance(cur, dict):
+                    cur = cur.get(p)
+                else:
+                    return None
+            return str(cur) if cur is not None else None
+        dbapi_connection.create_function("json_extract_path_text", -1, json_extract_path_text)
 else:
     engine = create_engine(TEST_DB_URL)
 

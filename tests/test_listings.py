@@ -322,3 +322,122 @@ def test_listings_pagination_caching_and_card_fields(client, admin_user, test_us
     assert public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None") is None
 
 
+def test_business_directory_public_mobile_and_no_email_leak(client, test_user, admin_user):
+    """
+    Test business listings disclose mobile publicly without lead deduction,
+    never leak email to public viewers (in card, detail or description),
+    property listings keep contacts locked for anonymous users,
+    and owner/admin continue to receive full email.
+    """
+    import json
+
+    # 1. Admin creates an approved business listing with contact details
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    biz_email = "business_owner_secret@example.com"
+    biz_mobile = "9876543210"
+    biz_desc = f"Business listing\r\nCategories: Real Estate Consultant\r\nAddress: Sector 14, Gurgaon\r\nContact: Test Business Owner / {biz_mobile} / {biz_email}\r\nWhatsApp: {biz_mobile}"
+    
+    biz_form_data = {
+        "kind": "business",
+        "name": "Super Realty Business",
+        "person": "Test Business Owner",
+        "mobile": biz_mobile,
+        "email": biz_email,
+        "whatsapp": biz_mobile,
+        "categoryName": "Real Estate Consultant, Property Dealer",
+        "city": "Gurgaon"
+    }
+
+    res_create_biz = client.post("/api/v1/listings", data={
+        "title": "Super Realty Business",
+        "location": "Sector 14, Gurgaon",
+        "price": 0,
+        "description": biz_desc,
+        "owner_name": "Test Business Owner",
+        "owner_role": "Owner",
+        "form_data": json.dumps(biz_form_data)
+    })
+    assert res_create_biz.status_code == 200
+    biz_id = res_create_biz.json()["data"]["id"]
+
+    # Approve business listing
+    client.post(f"/api/v1/listings/{biz_id}/status", json={"action": "approved"})
+
+    # Admin creates an approved property listing with contact details
+    prop_mobile = "9123456780"
+    prop_email = "property_owner_secret@example.com"
+    prop_form_data = {
+        "kind": "owner",
+        "propType": "flat",
+        "bhk": "2 BHK",
+        "mobile": prop_mobile,
+        "email": prop_email,
+        "whatsapp": prop_mobile,
+        "city": "Gurgaon"
+    }
+    res_create_prop = client.post("/api/v1/listings", data={
+        "title": "2 BHK Apartment for Sale in Sector 14",
+        "location": "Sector 14, Gurgaon",
+        "price": 6000000,
+        "description": "Lovely apartment with park view.",
+        "owner_name": "Property Seller",
+        "owner_role": "Owner",
+        "form_data": json.dumps(prop_form_data)
+    })
+    assert res_create_prop.status_code == 200
+    prop_id = res_create_prop.json()["data"]["id"]
+    client.post(f"/api/v1/listings/{prop_id}/status", json={"action": "approved"})
+
+    # 2. Log out -> Anonymous client
+    client.post("/api/v1/auth/logout")
+
+    # A. Anonymous GET business card (/api/v1/listings?kind=business)
+    card_res = client.get("/api/v1/listings?kind=business&status=approved")
+    assert card_res.status_code == 200
+    card_json_text = card_res.text
+    biz_cards = [c for c in card_res.json()["data"] if c["id"] == biz_id]
+    assert len(biz_cards) == 1
+    assert biz_cards[0]["mobile"] == biz_mobile
+    # Must NOT contain business email anywhere in the card JSON response
+    assert biz_email not in card_json_text
+    assert "@" not in biz_cards[0].get("assigned_email", "") if biz_cards[0].get("assigned_email") else True
+
+    # B. Anonymous GET business detail (/api/v1/listings/{biz_id})
+    detail_res = client.get(f"/api/v1/listings/{biz_id}")
+    assert detail_res.status_code == 200
+    detail_data = detail_res.json()["data"]
+    # Mobile must be present
+    assert detail_data["mobile"] == biz_mobile
+    assert detail_data["form_data"]["mobile"] == biz_mobile
+    # Email must NOT be in form_data
+    assert "email" not in detail_data["form_data"]
+    # Email must NOT leak in description
+    assert biz_email not in detail_data["description"]
+    assert detail_data.get("assigned_email") is None
+    # Whole JSON response body text must not contain the email
+    assert biz_email not in detail_res.text
+
+    # C. Anonymous GET property card and detail -> Mobile and email MUST be hidden/locked
+    prop_card_res = client.get("/api/v1/listings?kind=property&status=approved")
+    assert prop_card_res.status_code == 200
+    prop_cards = [c for c in prop_card_res.json()["data"] if c["id"] == prop_id]
+    assert len(prop_cards) == 1
+    assert prop_cards[0].get("mobile") is None
+    assert prop_email not in prop_card_res.text
+
+    prop_detail_res = client.get(f"/api/v1/listings/{prop_id}")
+    assert prop_detail_res.status_code == 200
+    prop_detail_data = prop_detail_res.json()["data"]
+    assert prop_detail_data.get("mobile") is None
+    assert "mobile" not in prop_detail_data["form_data"]
+    assert "email" not in prop_detail_data["form_data"]
+    assert prop_email not in prop_detail_res.text
+
+    # D. Admin login -> Admin gets full email
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    admin_biz_res = client.get(f"/api/v1/listings/{biz_id}")
+    assert admin_biz_res.status_code == 200
+    assert admin_biz_res.json()["data"]["form_data"]["email"] == biz_email
+
+
+

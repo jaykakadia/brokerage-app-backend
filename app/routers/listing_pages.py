@@ -280,6 +280,9 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     raw_desc = (listing.description or "").strip()
     clean_desc = re.sub(r"<[^>]*>", " ", raw_desc)
     clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
+    if is_business:
+        clean_desc = re.sub(r'\s*[/,]\s*[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', clean_desc)
+        clean_desc = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', clean_desc).strip()
     if not clean_desc:
         # Generated strictly from verified fields without padding or invented details
         if is_business:
