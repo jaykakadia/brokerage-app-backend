@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import math
 import threading
@@ -28,6 +29,18 @@ router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
 # Contact details and links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
 LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+BUSINESS_LOCKED_FORM_FIELDS = ("whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+
+
+def _sanitize_email_leak(text: Optional[str]) -> Optional[str]:
+    """Removes email addresses from text (e.g. auto-generated description) to prevent email leaks."""
+    if not text:
+        return text
+    # Remove "/ email@domain" or ", email@domain"
+    cleaned = re.sub(r'\s*[/,]\s*[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', text)
+    # Remove any standalone emails
+    cleaned = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', cleaned)
+    return cleaned
 
 
 class ListingCache:
@@ -103,6 +116,20 @@ def _listing_for_card(listing: Listing, is_admin: bool = False) -> dict:
         "created_at": listing.created_at.isoformat() if listing.created_at else None,
         "seo_title": compute_listing_seo_title(listing)
     }
+    if kind == "business":
+        mobile = None
+        if isinstance(listing.form_data, dict):
+            m = listing.form_data.get("mobile")
+            if isinstance(m, str) and m.strip():
+                mobile = m.strip()
+        if not mobile:
+            try:
+                if listing.user and getattr(listing.user, "phone", None):
+                    mobile = listing.user.phone
+            except Exception:
+                pass
+        card["mobile"] = mobile
+
     if is_admin:
         card["assigned_email"] = listing.assigned_email
     return card
@@ -113,9 +140,55 @@ def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool =
     from app.routers.listing_pages import compute_listing_seo_title
     data = ListingRead.model_validate(listing).model_dump()
     data["seo_title"] = compute_listing_seo_title(listing, db)
+
+    is_business = False
+    if isinstance(listing.form_data, dict) and listing.form_data.get("kind") == "business":
+        is_business = True
+    elif getattr(listing, "kind", None) == "business":
+        is_business = True
+
     can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
-    if not can_see and isinstance(data.get("form_data"), dict):
-        data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
+    if not can_see:
+        if is_business:
+            # Business listings: publicly disclose mobile to everyone. Email & whatsapp remain locked.
+            if isinstance(data.get("form_data"), dict):
+                data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in BUSINESS_LOCKED_FORM_FIELDS}
+            # Clean email leaks from auto-generated description
+            data["description"] = _sanitize_email_leak(data.get("description"))
+            # Expose mobile directly at top level for easy access
+            mobile = None
+            if isinstance(listing.form_data, dict):
+                m = listing.form_data.get("mobile")
+                if isinstance(m, str) and m.strip():
+                    mobile = m.strip()
+            if not mobile:
+                try:
+                    if listing.user and getattr(listing.user, "phone", None):
+                        mobile = listing.user.phone
+                except Exception:
+                    pass
+            data["mobile"] = mobile
+        else:
+            # Property listings: keep all contact fields locked unless unlocked
+            if isinstance(data.get("form_data"), dict):
+                data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}
+            data["mobile"] = None
+    else:
+        # Owner or admin or unlocked lead: include mobile
+        if is_business:
+            mobile = None
+            if isinstance(listing.form_data, dict):
+                m = listing.form_data.get("mobile")
+                if isinstance(m, str) and m.strip():
+                    mobile = m.strip()
+            if not mobile:
+                try:
+                    if listing.user and getattr(listing.user, "phone", None):
+                        mobile = listing.user.phone
+                except Exception:
+                    pass
+            data["mobile"] = mobile
+
     if not (user is not None and user.role.lower() == "admin"):
         data["assigned_email"] = None
     return data
