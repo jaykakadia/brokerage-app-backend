@@ -179,6 +179,19 @@ def get_public_stats(db: Session = Depends(get_db)):
     """Public endpoint — returns site-wide stats for the login page hero and browse sections."""
     _expire_featured(db)
     active = db.query(func.count(Listing.id)).filter(Listing.status == "approved").scalar() or 0
+    active_properties = db.query(func.count(Listing.id)).filter(
+        Listing.status == "approved",
+        func.json_extract_path_text(Listing.form_data, "kind") != "business"
+    ).scalar() or 0
+    active_businesses = db.query(func.count(Listing.id)).filter(
+        Listing.status == "approved",
+        func.json_extract_path_text(Listing.form_data, "kind") == "business"
+    ).scalar() or 0
+    cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    new_today = db.query(func.count(Listing.id)).filter(
+        Listing.status == "approved",
+        Listing.created_at >= cutoff
+    ).scalar() or 0
     featured = db.query(func.count(Listing.id)).filter(
         Listing.status == "approved", Listing.is_featured == True
     ).scalar() or 0
@@ -194,7 +207,10 @@ def get_public_stats(db: Session = Depends(get_db)):
     city_counts = [{"name": name, "count": count} for name, count in sorted(city_counter.items(), key=lambda x: -x[1])]
     users = db.query(func.count(User.id)).scalar() or 0
     return {
-        "active_listings": active,
+        "active_listings": active_properties,
+        "total_listings": active,
+        "active_businesses": active_businesses,
+        "new_today": new_today,
         "featured_listings": featured,
         "cities_covered": len(city_counts),
         "city_counts": city_counts,
