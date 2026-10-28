@@ -119,3 +119,11 @@ def legacy_search_redirect(request: Request, rest: Optional[str] = None, db: Ses
 
     base_html = load_base_index_html()
     return _build_410_response(base_html, "This search query is no longer valid or supported.")
+
+
+# 4. Bare Properties redirect: /properties and /properties/ -> /
+@router.api_route("/properties", methods=["GET", "HEAD"])
+@router.api_route("/properties/", methods=["GET", "HEAD"])
+def legacy_properties_redirect():
+    return RedirectResponse(url=f"{BASE_URL}/", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
