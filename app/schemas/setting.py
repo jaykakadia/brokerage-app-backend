@@ -38,5 +38,8 @@ class SocialLinksSettings(BaseModel):
     facebook_url: str = ""
     instagram_url: str = ""
     youtube_url: str = ""
+    linkedin_url: str = ""
+    x_url: str = ""
+    gbp_url: str = ""
     whatsapp_number: str = ""
     support_email: str = ""

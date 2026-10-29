@@ -19,6 +19,9 @@ SOCIAL_LINKS_KEYS = {
     "facebook_url": "social_facebook_url",
     "instagram_url": "social_instagram_url",
     "youtube_url": "social_youtube_url",
+    "linkedin_url": "social_linkedin_url",
+    "x_url": "social_x_url",
+    "gbp_url": "social_gbp_url",
     "whatsapp_number": "footer_whatsapp_number",
     "support_email": "footer_support_email",
 }
@@ -27,6 +30,9 @@ DEFAULT_SOCIAL_LINKS = {
     "facebook_url": "https://facebook.com",
     "instagram_url": "https://instagram.com",
     "youtube_url": "https://youtube.com",
+    "linkedin_url": "https://linkedin.com",
+    "x_url": "https://x.com",
+    "gbp_url": "",
     "whatsapp_number": "9992292828",
     "support_email": "support.tradecall@gmail.com",
 }
@@ -35,13 +41,11 @@ DEFAULT_SOCIAL_LINKS = {
 def _read_social_links(db: Session) -> SocialLinksSettings:
     rows = db.query(SystemSetting).filter(SystemSetting.key.in_(SOCIAL_LINKS_KEYS.values())).all()
     values = {row.key: row.value for row in rows}
-    return SocialLinksSettings(
-        facebook_url=values.get(SOCIAL_LINKS_KEYS["facebook_url"]) or DEFAULT_SOCIAL_LINKS["facebook_url"],
-        instagram_url=values.get(SOCIAL_LINKS_KEYS["instagram_url"]) or DEFAULT_SOCIAL_LINKS["instagram_url"],
-        youtube_url=values.get(SOCIAL_LINKS_KEYS["youtube_url"]) or DEFAULT_SOCIAL_LINKS["youtube_url"],
-        whatsapp_number=values.get(SOCIAL_LINKS_KEYS["whatsapp_number"]) or DEFAULT_SOCIAL_LINKS["whatsapp_number"],
-        support_email=values.get(SOCIAL_LINKS_KEYS["support_email"]) or DEFAULT_SOCIAL_LINKS["support_email"],
-    )
+    data = {
+        field: values.get(db_key) or DEFAULT_SOCIAL_LINKS.get(field, "")
+        for field, db_key in SOCIAL_LINKS_KEYS.items()
+    }
+    return SocialLinksSettings(**data)
 
 
 @public_router.get("/social-links", response_model=APIResponse[SocialLinksSettings])
@@ -74,16 +78,15 @@ def save_social_links(
             return "https://" + s
         return s
 
-    cleaned = {
-        "facebook_url": _normalize_url(req.facebook_url),
-        "instagram_url": _normalize_url(req.instagram_url),
-        "youtube_url": _normalize_url(req.youtube_url),
-        "whatsapp_number": req.whatsapp_number.strip(),
-        "support_email": req.support_email.strip().lower(),
-    }
-
     for field, key in SOCIAL_LINKS_KEYS.items():
-        val = cleaned[field]
+        raw_val = getattr(req, field, "") or ""
+        if field.endswith("_url"):
+            val = _normalize_url(raw_val)
+        elif field == "support_email":
+            val = raw_val.strip().lower()
+        else:
+            val = raw_val.strip()
+
         row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
         if row:
             row.value = val

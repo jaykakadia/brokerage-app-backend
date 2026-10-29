@@ -34,6 +34,8 @@ def test_social_links(client, admin_user, test_user):
     assert "facebook.com" in data["facebook_url"]
     assert "instagram.com" in data["instagram_url"]
     assert "youtube.com" in data["youtube_url"]
+    assert "linkedin.com" in data["linkedin_url"]
+    assert "x.com" in data["x_url"]
 
     # 2. Non-admin cannot save links
     client.post("/api/v1/auth/login", json={"email": test_user.email, "password": "password123"})
@@ -46,6 +48,9 @@ def test_social_links(client, admin_user, test_user):
         "facebook_url": "https://facebook.com/tradecallindia",
         "instagram_url": "https://instagram.com/tradecallindia",
         "youtube_url": "https://youtube.com/@tradecallindia",
+        "linkedin_url": "https://linkedin.com/company/tradecallindia",
+        "x_url": "https://x.com/tradecallindia",
+        "gbp_url": "https://maps.app.goo.gl/tradecall",
         "whatsapp_number": "9992292828",
         "support_email": "support.tradecall@gmail.com"
     }
@@ -60,3 +65,6 @@ def test_social_links(client, admin_user, test_user):
     assert res.json()["data"]["facebook_url"] == "https://facebook.com/tradecallindia"
     assert res.json()["data"]["instagram_url"] == "https://instagram.com/tradecallindia"
     assert res.json()["data"]["youtube_url"] == "https://youtube.com/@tradecallindia"
+    assert res.json()["data"]["linkedin_url"] == "https://linkedin.com/company/tradecallindia"
+    assert res.json()["data"]["x_url"] == "https://x.com/tradecallindia"
+    assert res.json()["data"]["gbp_url"] == "https://maps.app.goo.gl/tradecall"
