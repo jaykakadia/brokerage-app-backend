@@ -20,6 +20,15 @@ PHONE = "+91 9992292828"
 ADDRESS = "Palwal, Haryana"
 
 
+def format_page_title(raw_title: str, brand: str = "TradeCall India") -> str:
+    raw = (raw_title or "").strip()
+    # Strip existing duplicate brand suffixes if already present (e.g. "- TradeCall India" or "| TradeCall India")
+    raw = re.sub(rf"\s*[\-|:]\s*{re.escape(brand)}$", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\s*[\-|:]\s*Tradecall$", "", raw, flags=re.IGNORECASE)
+    raw = raw.strip()
+    return f"{raw} | {brand}" if raw else brand
+
+
 def _render_page_shell(
     base_html: str,
     title: str,
@@ -280,7 +289,7 @@ def get_blog_detail_page(slug: str, db: Session = Depends(get_db)):
         )
         return HTMLResponse(content=rendered, status_code=status.HTTP_404_NOT_FOUND)
 
-    title = f"{blog.title} | TradeCall India"
+    title = format_page_title(blog.title)
     # Clean excerpt from content
     clean_text = re.sub(r"<[^>]*>", " ", blog.content or "")
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
