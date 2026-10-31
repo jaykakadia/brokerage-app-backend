@@ -46,6 +46,8 @@ CITY_SLUG_MAP: Dict[str, str] = {
     "hisar": "Hisar",
     "panchkula": "Panchkula",
     "rewari": "Rewari",
+    "yamunanagar": "Yamunanagar",
+    "yamuna-nagar": "Yamunanagar",
     "noida": "Noida",
     "greater-noida": "Greater Noida",
     "ghaziabad": "Ghaziabad",
