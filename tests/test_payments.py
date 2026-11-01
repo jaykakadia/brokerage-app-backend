@@ -409,10 +409,13 @@ def test_notify_url_is_sent_only_when_configured(monkeypatch):
     monkeypatch.setattr(httpx, "Client", FakeClient)
     args = dict(order_id="tc_1", amount=10.0, customer={}, app_id="a", secret_key="s", environment="sandbox")
 
+    # order_meta is always sent now (carries payment_methods); notify_url only added when configured
     monkeypatch.setattr(settings, "CASHFREE_NOTIFY_URL", "")
     cashfree_service.create_order(**args)
-    assert "order_meta" not in captured["payload"]
+    assert captured["payload"]["order_meta"] == {"payment_methods": "upi,nb,cc,dc,app"}
+    assert "notify_url" not in captured["payload"]["order_meta"]
 
     monkeypatch.setattr(settings, "CASHFREE_NOTIFY_URL", "https://api.example.com/api/v1/payments/webhook")
     cashfree_service.create_order(**args)
-    assert captured["payload"]["order_meta"] == {"notify_url": "https://api.example.com/api/v1/payments/webhook"}
+    assert captured["payload"]["order_meta"]["payment_methods"] == "upi,nb,cc,dc,app"
+    assert captured["payload"]["order_meta"]["notify_url"] == "https://api.example.com/api/v1/payments/webhook"
