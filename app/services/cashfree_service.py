@@ -78,8 +78,13 @@ class CashfreeService:
             "customer_details": customer,
             "order_tags": tags or {},
         }
+        # Explicitly request all payment methods so UPI (QR/Collect on desktop),
+        # NetBanking, Cards and Wallets all appear in the checkout popup.
+        # Without this, Cashfree may omit UPI on desktop and hide many banks.
+        order_meta: Dict[str, Any] = {"payment_methods": "upi,nb,cc,dc,app"}
         if settings.CASHFREE_NOTIFY_URL:
-            payload["order_meta"] = {"notify_url": settings.CASHFREE_NOTIFY_URL}
+            order_meta["notify_url"] = settings.CASHFREE_NOTIFY_URL
+        payload["order_meta"] = order_meta
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(
                 f"{self._base_url(environment)}/orders",
