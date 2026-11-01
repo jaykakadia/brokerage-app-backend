@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 
 
 # Contact details and links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
-LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl", "person")
 BUSINESS_LOCKED_FORM_FIELDS = ("whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
 
 
@@ -41,6 +41,28 @@ def _sanitize_email_leak(text: Optional[str]) -> Optional[str]:
     # Remove any standalone emails
     cleaned = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', cleaned)
     return cleaned
+
+
+def _mask_locked_description(desc: Optional[str], owner_name: Optional[str] = None, form_data: Optional[dict] = None) -> Optional[str]:
+    """Masks owner name, phone numbers, emails, and contact lines in the description if locked."""
+    if not desc:
+        return desc
+    res = desc
+    res = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[Hidden - unlock to view]', res)
+    res = re.sub(r'(?:\+?91[\s-]?)?[6-9]\d{9}', '[Hidden - unlock to view]', res)
+    res = re.sub(r'(?i)\b(contact|owner|whatsapp|call)\s*:\s*[^\r\n]+', r'\1: [Hidden - unlock to view]', res)
+    names = []
+    generic = {"owner", "agent", "builder", "admin", "user", "dealer", "broker", "consultant"}
+    if owner_name and len(owner_name.strip()) >= 3 and owner_name.strip().lower() not in generic and owner_name.strip() != "[Hidden]":
+        names.append(owner_name.strip())
+    if isinstance(form_data, dict):
+        p = form_data.get("person")
+        if isinstance(p, str) and len(p.strip()) >= 3 and p.strip().lower() not in generic and p.strip() != "[Hidden]":
+            names.append(p.strip())
+    names.sort(key=len, reverse=True)
+    for n in names:
+        res = re.sub(re.escape(n), '[Hidden - unlock to view]', res, flags=re.IGNORECASE)
+    return res
 
 
 class ListingCache:
@@ -92,6 +114,10 @@ def _listing_for_card(listing: Listing, is_admin: bool = False) -> dict:
 
     city = _listing_city(listing.location, listing.form_data)
 
+    owner_name = listing.owner_name if (is_admin or kind == "business") else ""
+    if kind == "business" and not owner_name:
+        owner_name = (listing.form_data.get("person") or listing.form_data.get("name") or "Business Owner") if isinstance(listing.form_data, dict) else "Business Owner"
+
     card = {
         "id": listing.id,
         "user_id": listing.user_id,
@@ -99,7 +125,7 @@ def _listing_for_card(listing: Listing, is_admin: bool = False) -> dict:
         "location": listing.location,
         "city": city,
         "price": float(listing.price) if listing.price is not None else 0.0,
-        "owner_name": listing.owner_name,
+        "owner_name": owner_name,
         "owner_role": listing.owner_role,
         "status": listing.status,
         "verified": listing.verified,
@@ -148,8 +174,10 @@ def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool =
         is_business = True
 
     can_see = unlocked or (user is not None and (user.role.lower() == "admin" or user.id == listing.user_id))
+    data["unlocked"] = can_see
     if not can_see:
         if is_business:
+            data["owner_name"] = listing.owner_name
             # Business listings: publicly disclose mobile to everyone. Email & whatsapp remain locked.
             if isinstance(data.get("form_data"), dict):
                 data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in BUSINESS_LOCKED_FORM_FIELDS}
@@ -169,6 +197,9 @@ def _listing_for_viewer(listing: Listing, user: Optional[User], unlocked: bool =
                     pass
             data["mobile"] = mobile
         else:
+            data["owner_name"] = "[Hidden]"
+            if data.get("description"):
+                data["description"] = _mask_locked_description(data.get("description"), listing.owner_name, data.get("form_data"))
             # Property listings: keep all contact fields locked unless unlocked
             if isinstance(data.get("form_data"), dict):
                 data["form_data"] = {k: v for k, v in data["form_data"].items() if k not in LOCKED_FORM_FIELDS}

@@ -398,6 +398,7 @@ def test_business_directory_public_mobile_and_no_email_leak(client, test_user, a
     biz_cards = [c for c in card_res.json()["data"] if c["id"] == biz_id]
     assert len(biz_cards) == 1
     assert biz_cards[0]["mobile"] == biz_mobile
+    assert biz_cards[0]["owner_name"] == "Test Business Owner"
     # Must NOT contain business email anywhere in the card JSON response
     assert biz_email not in card_json_text
     assert "@" not in biz_cards[0].get("assigned_email", "") if biz_cards[0].get("assigned_email") else True
@@ -406,6 +407,7 @@ def test_business_directory_public_mobile_and_no_email_leak(client, test_user, a
     detail_res = client.get(f"/api/v1/listings/{biz_id}")
     assert detail_res.status_code == 200
     detail_data = detail_res.json()["data"]
+    assert detail_data["owner_name"] == "Test Business Owner"
     # Mobile must be present
     assert detail_data["mobile"] == biz_mobile
     assert detail_data["form_data"]["mobile"] == biz_mobile
@@ -417,27 +419,32 @@ def test_business_directory_public_mobile_and_no_email_leak(client, test_user, a
     # Whole JSON response body text must not contain the email
     assert biz_email not in detail_res.text
 
-    # C. Anonymous GET property card and detail -> Mobile and email MUST be hidden/locked
+    # C. Anonymous GET property card and detail -> Mobile, email, and owner_name MUST be hidden/locked
     prop_card_res = client.get("/api/v1/listings?kind=property&status=approved")
     assert prop_card_res.status_code == 200
     prop_cards = [c for c in prop_card_res.json()["data"] if c["id"] == prop_id]
     assert len(prop_cards) == 1
     assert prop_cards[0].get("mobile") is None
+    assert prop_cards[0].get("owner_name") == ""
     assert prop_email not in prop_card_res.text
 
     prop_detail_res = client.get(f"/api/v1/listings/{prop_id}")
     assert prop_detail_res.status_code == 200
     prop_detail_data = prop_detail_res.json()["data"]
     assert prop_detail_data.get("mobile") is None
+    assert prop_detail_data.get("owner_name") == "[Hidden]"
+    assert prop_detail_data.get("unlocked") is False
     assert "mobile" not in prop_detail_data["form_data"]
     assert "email" not in prop_detail_data["form_data"]
     assert prop_email not in prop_detail_res.text
 
-    # D. Admin login -> Admin gets full email
+    # D. Admin login -> Admin gets full email and owner_name
     client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
     admin_biz_res = client.get(f"/api/v1/listings/{biz_id}")
     assert admin_biz_res.status_code == 200
     assert admin_biz_res.json()["data"]["form_data"]["email"] == biz_email
+    assert admin_biz_res.json()["data"]["unlocked"] is True
+    assert admin_biz_res.json()["data"]["owner_name"] != "[Hidden]"
 
 
 

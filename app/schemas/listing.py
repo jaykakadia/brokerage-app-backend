@@ -63,6 +63,7 @@ class ListingRead(ListingBase):
     seo_title: Optional[str] = None
     images: List[ListingImageRead] = []
     mobile: Optional[str] = None
+    unlocked: bool = False
 
     model_config = {"from_attributes": True}
 
