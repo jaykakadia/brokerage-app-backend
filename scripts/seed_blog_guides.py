@@ -17,8 +17,8 @@ from app.db.models.blog import Blog
 
 GUIDES = [
     {
-        "title": "How to Check Plot Approvals and Registry Documents in Haryana",
-        "permalink": "how-to-check-plot-approvals-and-registry-documents-in-haryana",
+        "title": "How to Check Plot Approvals & Registry Documents in Haryana",
+        "permalink": "how-to-check-plot-approvals-registry-documents-in-haryana",
         "category": "legal-guide",
         "author": "TradeCall Legal & Research Team",
         "tags": "plot approvals, haryana registry, jamabandi, dtcp haryana, section 7a, land verification",
@@ -280,8 +280,8 @@ GUIDES = [
 </article>"""
     },
     {
-        "title": "Property Prices in Palwal 2025: Complete Guide",
-        "permalink": "property-prices-in-palwal-2025-complete-guide",
+        "title": "Property Prices in Palwal 2026: Complete Guide",
+        "permalink": "property-prices-in-palwal-2026-complete-guide",
         "category": "market-insights",
         "author": "TradeCall Research Team",
         "tags": "property prices palwal, circle rates palwal, omaxe city palwal, huda sector 2 palwal, real estate 2025",
@@ -410,8 +410,8 @@ GUIDES = [
 </article>"""
     },
     {
-        "title": "Agricultural Land Investment in Haryana 2025",
-        "permalink": "agricultural-land-investment-in-haryana-2025",
+        "title": "Agricultural Land Investment in Haryana 2026",
+        "permalink": "agricultural-land-investment-in-haryana-2026",
         "category": "invest",
         "author": "TradeCall Research Team",
         "tags": "agricultural land, kmp expressway plots, section 7a, farm house land haryana, jamabandi",
