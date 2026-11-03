@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import String, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Employee(Base, TimestampMixin):
+class Employee(Base, TimestampMixin, SoftDeleteMixin):
     """Field Associate / Employee tracking model."""
     __tablename__ = "employees"
 

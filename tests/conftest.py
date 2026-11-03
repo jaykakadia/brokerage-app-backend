@@ -86,7 +86,10 @@ if TEST_DB_URL.startswith("sqlite"):
 else:
     engine = create_engine(TEST_DB_URL)
 
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from app.core.audit import setup_audit_logging
+
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
+setup_audit_logging(TestingSessionLocal)
 
 
 

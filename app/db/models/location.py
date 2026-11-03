@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import String, Integer, Numeric, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.base import Base
+from app.db.base import Base, SoftDeleteMixin
 
 
-class Location(Base):
+class Location(Base, SoftDeleteMixin):
     __tablename__ = "locations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

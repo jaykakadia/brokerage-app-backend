@@ -1,10 +1,10 @@
 from typing import Optional
 from sqlalchemy import String, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Enquiry(Base, TimestampMixin):
+class Enquiry(Base, TimestampMixin, SoftDeleteMixin):
     """Message sent through the public Contact Us form, handled from the admin panel."""
     __tablename__ = "enquiries"
 

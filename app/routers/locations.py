@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api/v1/locations", tags=["Locations"])
 
 @router.get("/cities", response_model=APIResponse[List[str]])
 def get_cities(db: Session = Depends(get_db)):
-    cities = db.query(Location.city_name).distinct().all()
+    cities = db.query(Location.city_name).filter(Location.is_deleted == False).distinct().all()
     city_list = [c[0] for c in cities if c[0]]
     if not city_list:
         # Default NCR locations if empty
@@ -23,7 +24,7 @@ def get_cities(db: Session = Depends(get_db)):
 
 @router.get("", response_model=APIResponse[List[LocationRead]])
 def get_locations(db: Session = Depends(get_db)):
-    locations = db.query(Location).order_by(Location.city_name.asc()).all()
+    locations = db.query(Location).filter(Location.is_deleted == False).order_by(Location.city_name.asc()).all()
     return APIResponse(status="success", data=[LocationRead.model_validate(l) for l in locations])
 
 
@@ -86,6 +87,7 @@ def delete_location(
     loc = db.query(Location).filter(Location.id == location_id).first()
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found.")
-    db.delete(loc)
+    loc.is_deleted = True
+    loc.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return MessageResponse(status="success", message="Location deleted successfully.")

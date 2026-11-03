@@ -27,6 +27,8 @@ class UserRead(UserBase):
     x_url: Optional[str] = None
     youtube_url: Optional[str] = None
     created_at: datetime
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

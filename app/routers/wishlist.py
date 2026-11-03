@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
@@ -26,7 +27,7 @@ def get_wishlist(
         records = (
             db.query(Wishlist.listing_id)
             .join(Listing, Wishlist.listing_id == Listing.id)
-            .filter(Wishlist.user_id == current_user.id, Listing.status != "deleted")
+            .filter(Wishlist.user_id == current_user.id, Wishlist.is_deleted == False, Listing.status != "deleted")
             .all()
         )
         ids = [r[0] for r in records]
@@ -35,14 +36,14 @@ def get_wishlist(
     records = (
         db.query(Wishlist)
         .options(joinedload(Wishlist.listing).joinedload(Listing.images))
-        .filter(Wishlist.user_id == current_user.id)
+        .filter(Wishlist.user_id == current_user.id, Wishlist.is_deleted == False)
         .order_by(Wishlist.id.desc())
         .all()
     )
 
     data = []
     for w in records:
-        if w.listing and w.listing.status != "deleted":
+        if w.listing and not w.listing.is_deleted and w.listing.status != "deleted":
             item = ListingRead.model_validate(w.listing).model_dump()
             if current_user.role.lower() != "admin":
                 item["assigned_email"] = None
@@ -61,7 +62,7 @@ def toggle_wishlist(
     Toggles a listing in the user's wishlist.
     Adds if not present; removes if already present.
     """
-    listing = db.query(Listing).filter(Listing.id == req.listing_id, Listing.status != "deleted").first()
+    listing = db.query(Listing).filter(Listing.id == req.listing_id, Listing.is_deleted == False, Listing.status != "deleted").first()
     if not listing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -74,14 +75,26 @@ def toggle_wishlist(
     ).first()
 
     if existing:
-        db.delete(existing)
-        db.commit()
-        return ToggleWishlistResponse(
-            status="success",
-            wishlisted=False,
-            listing_id=req.listing_id,
-            action="removed"
-        )
+        if not existing.is_deleted:
+            existing.is_deleted = True
+            existing.deleted_at = datetime.now(timezone.utc)
+            db.commit()
+            return ToggleWishlistResponse(
+                status="success",
+                wishlisted=False,
+                listing_id=req.listing_id,
+                action="removed"
+            )
+        else:
+            existing.is_deleted = False
+            existing.deleted_at = None
+            db.commit()
+            return ToggleWishlistResponse(
+                status="success",
+                wishlisted=True,
+                listing_id=req.listing_id,
+                action="added"
+            )
 
     new_item = Wishlist(user_id=current_user.id, listing_id=req.listing_id)
     db.add(new_item)

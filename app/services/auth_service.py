@@ -344,7 +344,7 @@ class AuthService:
                 detail="Invalid email or password."
             )
 
-        if user.status != "active":
+        if user.status != "active" or getattr(user, "is_deleted", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is inactive or suspended. Please contact support."

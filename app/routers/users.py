@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import csv
 import io
 import re
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user, get_current_admin, get_db
 from app.core.security import hash_password, verify_password
 from app.db.models.user import User
+from app.db.models.listing import Listing
 from app.schemas.common import APIResponse, MessageResponse
 from app.schemas.user import (
     UserRead, UserProfileUpdate, ChangePasswordRequest,
@@ -478,6 +480,12 @@ def update_admin_user(
         user.role = req.role
     if req.status is not None:
         user.status = req.status
+        if req.status == "deleted":
+            user.is_deleted = True
+            user.deleted_at = datetime.now(timezone.utc)
+        elif req.status == "active":
+            user.is_deleted = False
+            user.deleted_at = None
     _apply_profile_fields(user, req)
 
     db.commit()
@@ -491,12 +499,20 @@ def delete_admin_user(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """Permanently deletes the account and its listings/wishlist; orders and lead reveals are kept with the user cleared."""
-    user = db.query(User).filter(User.id == user_id).first()
+    """Soft deletes the account and cascades soft-delete to its listings."""
+    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.role.lower() == "admin":
         _guard_admin_removal(db, admin, user)
-    db.delete(user)
+    now = datetime.now(timezone.utc)
+    user.is_deleted = True
+    user.deleted_at = now
+    user.status = "deleted"
+    user_listings = db.query(Listing).filter(Listing.user_id == user.id, Listing.is_deleted == False).all()
+    for l in user_listings:
+        l.is_deleted = True
+        l.deleted_at = now
+        l.status = "deleted"
     db.commit()
-    return MessageResponse(status="success", message="User deleted permanently.")
+    return MessageResponse(status="success", message="User deactivated successfully.")

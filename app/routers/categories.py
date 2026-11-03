@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -50,7 +51,7 @@ def _to_category_read(category: Category, counts: Dict[str, int]) -> CategoryRea
 
 @router.get("", response_model=APIResponse[List[CategoryRead]])
 def get_categories(db: Session = Depends(get_db)):
-    cats = db.query(Category).order_by(Category.name.asc()).all()
+    cats = db.query(Category).filter(Category.is_deleted == False).order_by(Category.name.asc()).all()
     if not cats:
         # Default real estate and business categories
         defaults = [
@@ -71,7 +72,7 @@ def get_categories(db: Session = Depends(get_db)):
 
 @router.get("/{category_id}", response_model=APIResponse[CategoryRead])
 def get_category(category_id: int, db: Session = Depends(get_db)):
-    cat = db.query(Category).filter(Category.id == category_id).first()
+    cat = db.query(Category).filter(Category.id == category_id, Category.is_deleted == False).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found.")
     counts = _listing_counts_by_category(db)
@@ -130,6 +131,7 @@ def delete_category(
     cat = db.query(Category).filter(Category.id == category_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found.")
-    db.delete(cat)
+    cat.is_deleted = True
+    cat.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return MessageResponse(status="success", message="Category deleted successfully.")

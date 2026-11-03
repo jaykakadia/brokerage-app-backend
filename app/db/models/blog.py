@@ -1,10 +1,10 @@
 from typing import Optional
 from sqlalchemy import String, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Blog(Base, TimestampMixin):
+class Blog(Base, TimestampMixin, SoftDeleteMixin):
     """Article / Blog model for market insights and guides."""
     __tablename__ = "blogs"
 

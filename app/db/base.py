@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime
+from typing import Optional
+from sqlalchemy import DateTime, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -19,3 +20,17 @@ class TimestampMixin:
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+
+class SoftDeleteMixin:
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+

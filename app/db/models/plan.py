@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from sqlalchemy import String, Numeric, Integer, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.base import Base
+from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Plan(Base):
+class Plan(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "plans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -18,12 +18,3 @@ class Plan(Base):
     duration_days: Mapped[int] = mapped_column(Integer, default=365, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )

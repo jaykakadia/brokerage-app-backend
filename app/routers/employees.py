@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -29,7 +29,7 @@ def get_ref_codes(
     db: Session = Depends(get_db)
 ):
     """Public lookup for active Field Associate reference codes."""
-    query = db.query(Employee).filter(Employee.status == "active")
+    query = db.query(Employee).filter(Employee.status == "active", Employee.is_deleted == False)
     if q:
         search_filter = f"%{q.strip().upper()}%"
         query = query.filter(
@@ -49,7 +49,7 @@ def list_employees(
     db: Session = Depends(get_db)
 ):
     """Admin endpoint to list all field associates with optional date-range listing counts."""
-    employees = db.query(Employee).order_by(Employee.id.desc()).all()
+    employees = db.query(Employee).filter(Employee.is_deleted == False).order_by(Employee.id.desc()).all()
     
     # Calculate listing counts per reference code
     listing_q = db.query(Listing.reference_code, func.count(Listing.id)).filter(
@@ -241,6 +241,8 @@ def delete_employee(
     if not emp:
         raise HTTPException(status_code=404, detail="Business Associate not found.")
 
-    db.delete(emp)
+    emp.is_deleted = True
+    emp.deleted_at = datetime.now(timezone.utc)
+    emp.status = "inactive"
     db.commit()
     return MessageResponse(status="success", message="Business Associate deleted successfully.")

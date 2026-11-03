@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ def get_plans(
     Public users see only active plans ordered by sort_order and price.
     Admins can request all plans (including inactive).
     """
-    query = db.query(Plan).filter(Plan.plan_type == type)
+    query = db.query(Plan).filter(Plan.plan_type == type, Plan.is_deleted == False)
     is_admin = user and user.role.lower() == "admin"
 
     if not is_admin or not all:
@@ -38,7 +39,7 @@ def get_plans(
 
 @router.get("/{plan_id}", response_model=APIResponse[PlanRead])
 def get_plan(plan_id: int, db: Session = Depends(get_db)):
-    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    plan = db.query(Plan).filter(Plan.id == plan_id, Plan.is_deleted == False).first()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found.")
     return APIResponse(status="success", data=PlanRead.model_validate(plan))
@@ -101,6 +102,8 @@ def delete_plan(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found.")
 
-    db.delete(plan)
+    plan.is_deleted = True
+    plan.deleted_at = datetime.now(timezone.utc)
+    plan.status = "inactive"
     db.commit()
     return MessageResponse(status="success", message="Plan deleted successfully.")

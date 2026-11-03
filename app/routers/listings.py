@@ -243,6 +243,7 @@ def _expire_featured(db: Session) -> None:
         Listing.featured_until <= datetime.now(timezone.utc)
     ).update({Listing.is_featured: False, Listing.featured_until: None}, synchronize_session=False)
     if expired:
+        db.expire_all()
         db.commit()
         public_listings_cache.clear()
 
@@ -387,6 +388,9 @@ def get_listings(
     elif not user_id and not is_admin:
         # Unauthenticated or non-admin users default to approved when not querying specific user
         query = query.filter(Listing.status == "approved")
+
+    if not is_admin and (not status or status.lower() != "deleted"):
+        query = query.filter(Listing.is_deleted == False)
 
     # City filter (supports single or comma-separated multiple cities)
     if city:
@@ -563,6 +567,10 @@ def get_listing(
 
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
+
+    if listing.is_deleted:
+        if not user or (user.role.lower() != "admin" and user.id != listing.user_id):
+            raise HTTPException(status_code=404, detail="Listing not found.")
     unlocked = user is not None and db.query(LeadReveal).filter(
         LeadReveal.user_id == user.id, LeadReveal.listing_id == listing.id
     ).first() is not None
@@ -788,6 +796,9 @@ async def update_listing(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
 
+    if listing.is_deleted and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=400, detail="Cannot edit a deleted listing.")
+
     # Authorization: Owner or Admin
     if listing.user_id != current_user.id and current_user.role.lower() != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to edit this listing.")
@@ -897,19 +908,34 @@ def update_listing_status(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
 
+    if listing.is_deleted and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=400, detail="Cannot edit a deleted listing.")
+
     action = req.action.lower()
     if action == "approve":
         listing.status = "approved"
+        listing.is_deleted = False
+        listing.deleted_at = None
     elif action == "pending":
         listing.status = "pending"
+        listing.is_deleted = False
+        listing.deleted_at = None
     elif action == "suspended":
         listing.status = "suspended"
+        listing.is_deleted = False
+        listing.deleted_at = None
     elif action == "sold":
         listing.status = "sold"
+        listing.is_deleted = False
+        listing.deleted_at = None
     elif action == "rented":
         listing.status = "rented"
+        listing.is_deleted = False
+        listing.deleted_at = None
     elif action == "delete":
         listing.status = "deleted"
+        listing.is_deleted = True
+        listing.deleted_at = datetime.now(timezone.utc)
     elif action == "stamp":
         listing.verified = 1
     else:
@@ -931,6 +957,9 @@ def set_listing_featured(
     listing = db.query(Listing).filter(Listing.id == listing_id).first()
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
+
+    if listing.is_deleted and current_user.role.lower() != "admin":
+        raise HTTPException(status_code=400, detail="Cannot edit a deleted listing.")
 
     if req.featured:
         if listing.status != "approved":
@@ -960,13 +989,15 @@ def delete_listing(
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found.")
 
+    if listing.is_deleted:
+        return MessageResponse(status="success", message="Listing is already deleted.")
+
     if listing.user_id != current_user.id and current_user.role.lower() != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to delete this listing.")
 
-    # Physical file cleanup
-    storage_service.delete_listing_folder(listing.id)
-
-    db.delete(listing)
+    listing.is_deleted = True
+    listing.deleted_at = datetime.now(timezone.utc)
+    listing.status = "deleted"
     db.commit()
     public_listings_cache.clear()
     return MessageResponse(status="success", message="Listing deleted successfully.")

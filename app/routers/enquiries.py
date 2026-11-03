@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -46,7 +47,7 @@ def list_enquiries(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Enquiry)
+    query = db.query(Enquiry).filter(Enquiry.is_deleted == False)
     if status and status != "all":
         query = query.filter(Enquiry.status == status)
     if search and search.strip():
@@ -61,7 +62,7 @@ def list_enquiries(
 
 @router.get("/admin/enquiries/counts", response_model=APIResponse[Dict[str, int]])
 def enquiry_counts(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
-    rows = dict(db.query(Enquiry.status, func.count(Enquiry.id)).group_by(Enquiry.status).all())
+    rows = dict(db.query(Enquiry.status, func.count(Enquiry.id)).filter(Enquiry.is_deleted == False).group_by(Enquiry.status).all())
     counts = {s: int(rows.get(s, 0)) for s in STATUSES}
     counts["all"] = sum(counts.values())
     return APIResponse(status="success", data=counts)
@@ -95,6 +96,7 @@ def delete_enquiry(
     enquiry = db.query(Enquiry).filter(Enquiry.id == enquiry_id).first()
     if not enquiry:
         raise HTTPException(status_code=404, detail="Enquiry not found.")
-    db.delete(enquiry)
+    enquiry.is_deleted = True
+    enquiry.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return MessageResponse(status="success", message="Enquiry deleted.")

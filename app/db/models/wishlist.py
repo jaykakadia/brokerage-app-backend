@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from sqlalchemy import Integer, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.db.base import Base
+from app.db.base import Base, SoftDeleteMixin
 
 
-class Wishlist(Base):
+class Wishlist(Base, SoftDeleteMixin):
     __tablename__ = "wishlists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

@@ -64,6 +64,8 @@ class ListingRead(ListingBase):
     images: List[ListingImageRead] = []
     mobile: Optional[str] = None
     unlocked: bool = False
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

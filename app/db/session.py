@@ -2,6 +2,7 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
+from app.core.audit import setup_audit_logging
 
 # Configure engine based on driver
 connect_args = {}
@@ -19,7 +20,8 @@ engine = create_engine(
     pool_pre_ping=True
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
+setup_audit_logging(SessionLocal)
 
 
 def get_db() -> Generator[Session, None, None]:

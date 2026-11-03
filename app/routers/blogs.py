@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import random
 import re
 from typing import List, Optional
@@ -45,7 +46,7 @@ def list_public_blogs(
     db: Session = Depends(get_db)
 ):
     """Public endpoint to fetch published blogs."""
-    query = db.query(Blog).filter(Blog.status.in_(["published", "publish"]))
+    query = db.query(Blog).filter(Blog.is_deleted == False, Blog.status.in_(["published", "publish"]))
     if category and category.lower() != "all":
         query = query.filter(Blog.category.ilike(category.strip()))
     if search:
@@ -71,7 +72,7 @@ def get_public_blog(
     else:
         blog = db.query(Blog).filter(Blog.permalink == id_or_slug.strip().lower()).first()
 
-    if not blog or blog.status not in ["published", "publish"]:
+    if not blog or blog.is_deleted or blog.status not in ["published", "publish"]:
         raise HTTPException(status_code=404, detail="Blog not found.")
 
     return APIResponse(status="success", data=BlogRead.model_validate(blog))
@@ -85,7 +86,7 @@ def list_admin_blogs(
     db: Session = Depends(get_db)
 ):
     """Admin endpoint to list all blogs including drafts."""
-    blogs = db.query(Blog).order_by(Blog.id.desc()).all()
+    blogs = db.query(Blog).filter(Blog.is_deleted == False).order_by(Blog.id.desc()).all()
     data = [BlogRead.model_validate(b) for b in blogs]
     return APIResponse(status="success", data=data)
 
@@ -208,6 +209,8 @@ def delete_blog(
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found.")
-    db.delete(blog)
+    blog.is_deleted = True
+    blog.deleted_at = datetime.now(timezone.utc)
+    blog.status = "archived"
     db.commit()
     return MessageResponse(status="success", message="Blog deleted successfully.")

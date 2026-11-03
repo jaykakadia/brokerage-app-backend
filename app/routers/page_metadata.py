@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,7 +39,7 @@ def normalize_path(raw: str) -> str:
 @router.get("/api/v1/metadata", response_model=APIResponse[List[PageMetadataRead]])
 def get_all_metadata(db: Session = Depends(get_db)):
     """Public endpoint to fetch all configured page metadata mappings."""
-    items = db.query(PageMetadata).order_by(PageMetadata.path.asc()).all()
+    items = db.query(PageMetadata).filter(PageMetadata.is_deleted == False).order_by(PageMetadata.path.asc()).all()
     return APIResponse(status="success", data=[PageMetadataRead.model_validate(item) for item in items])
 
 
@@ -46,7 +47,7 @@ def get_all_metadata(db: Session = Depends(get_db)):
 def resolve_page_metadata(path: str = Query(..., description="URL path to check, e.g. /properties/palwal"), db: Session = Depends(get_db)):
     """Public endpoint to fetch metadata for a single specific page URL path."""
     normalized = normalize_path(path)
-    item = db.query(PageMetadata).filter(PageMetadata.path == normalized).first()
+    item = db.query(PageMetadata).filter(PageMetadata.path == normalized, PageMetadata.is_deleted == False).first()
     if not item:
         return APIResponse(status="success", data=None)
     return APIResponse(status="success", data=PageMetadataRead.model_validate(item))
@@ -59,7 +60,7 @@ def admin_get_metadata(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    items = db.query(PageMetadata).order_by(PageMetadata.path.asc()).all()
+    items = db.query(PageMetadata).filter(PageMetadata.is_deleted == False).order_by(PageMetadata.path.asc()).all()
     return APIResponse(status="success", data=[PageMetadataRead.model_validate(item) for item in items])
 
 
@@ -141,6 +142,7 @@ def admin_delete_metadata(
     if not entry:
         raise HTTPException(status_code=404, detail="Page metadata not found.")
 
-    db.delete(entry)
+    entry.is_deleted = True
+    entry.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return MessageResponse(status="success", message="Page metadata deleted successfully.")

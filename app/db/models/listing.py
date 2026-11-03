@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from typing import Optional, List, Any
 from sqlalchemy import String, Integer, Numeric, Text, ForeignKey, JSON, SmallInteger, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Listing(Base, TimestampMixin):
+class Listing(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "listings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

@@ -213,7 +213,8 @@ def test_admin_edit_and_delete_user(client, admin_user, test_user, db_session):
     res = client.delete(f"/api/v1/admin/users/{test_user.id}")
     assert res.status_code == 200
     db_session.expire_all()
-    assert db_session.query(User).filter(User.id == test_user.id).first() is None
+    deleted = db_session.query(User).filter(User.id == test_user.id).first()
+    assert deleted is not None and deleted.is_deleted is True and deleted.status == "deleted"
     assert client.delete(f"/api/v1/admin/users/{test_user.id}").status_code == 404
 
 
