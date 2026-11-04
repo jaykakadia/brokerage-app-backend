@@ -55,6 +55,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key "deploy@$VPS_HOST" bash -s -- "$GITHUB_SHA" <<'REMOTE'
           set -euo pipefail
+          git config --global --add safe.directory /opt/tradecall/brokerage-app-backend || true
           cd /opt/tradecall/brokerage-app-backend
           git fetch --quiet origin main
           git reset --hard "$1"

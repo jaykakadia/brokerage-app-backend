@@ -18,6 +18,7 @@ chmod 600 /home/deploy/.ssh/authorized_keys
 
 mkdir -p "$WEB_DIR"
 chown -R deploy:deploy /opt/tradecall "$WEB_DIR"
+sudo -u deploy git config --global --add safe.directory '*' || true
 
 cat > /etc/sudoers.d/deploy <<'SUDO'
 deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart tradecall-api, /usr/bin/systemctl is-active tradecall-api
