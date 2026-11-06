@@ -36,6 +36,7 @@ STATIC_PAGES = [
     "/cities",
     "/business-directory",
     "/blog",
+    "/faq",
 ]
 
 
@@ -190,6 +191,25 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
                 "loc": f"{BASE_URL}/{c_slug}/{l_slug}",
                 "lastmod": _format_date(latest_dt) if latest_dt else None
             })
+
+    # 4. Business Directory City & Category Landing Pages (Audit Point 7)
+    directory_hub_paths = [
+        "/business-directory/palwal",
+        "/business-directory/faridabad",
+        "/business-directory/palwal/property-dealers",
+        "/business-directory/faridabad/property-dealers",
+        "/business-directory/palwal/builders-and-developers",
+        "/business-directory/faridabad/builders-and-developers",
+        "/business-directory/gurugram/property-dealers",
+        "/business-directory/noida/property-dealers",
+        "/business-directory/ballabgarh/property-dealers",
+        "/business-directory/hodal/property-dealers",
+    ]
+    for d_path in directory_hub_paths:
+        items.append({
+            "loc": f"{BASE_URL}{d_path}",
+            "lastmod": None
+        })
 
     items.sort(key=lambda x: x["loc"])
     return items

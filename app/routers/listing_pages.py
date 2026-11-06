@@ -1,6 +1,7 @@
 import html as html_lib
 import json
 import re
+import time
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
-from app.core.cities import slugify_city
+from app.core.cities import slugify_city, slugify_locality
 from app.core.validation_rules import is_buyer_requirement, is_thin_business
 from app.routers.city_pages import load_base_index_html, set_or_replace_canonical, set_or_replace_meta
 from app.routers.sitemap import get_listing_path
@@ -60,7 +61,21 @@ def _listing_city(location: Optional[str], form_data: Dict[str, Any]) -> str:
     return city or "Palwal"
 
 
-import time
+def _extract_primary_business_category(listing: Any, form_data: Dict[str, Any]) -> str:
+    """Extracts the primary business category from form_data or listing fields."""
+    selected = form_data.get("selectedCategories")
+    if isinstance(selected, list) and selected:
+        first = selected[0]
+        if isinstance(first, dict) and first.get("name"):
+            return str(first["name"]).strip()
+        elif isinstance(first, str) and first.strip():
+            return first.strip()
+    for key in ("category", "categoryName"):
+        val = form_data.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.split(",")[0].strip()
+    return "Property Dealer"
+
 
 _DUPLICATE_TITLES_CACHE: Dict[str, Any] = {"timestamp": 0.0, "titles": set()}
 
@@ -74,7 +89,8 @@ def invalidate_title_cache() -> None:
 def compute_base_seo_title(listing: Any) -> str:
     """
     Computes base SEO title directly using listing.title and price:
-    {listing.title} - {price}
+    - Property: {listing.title} - {price}
+    - Business (Audit Point 3 & 8): {Business Name} {City} | {Category}
     """
     form_data = getattr(listing, "form_data", None) or {}
     if not isinstance(form_data, dict):
@@ -89,14 +105,22 @@ def compute_base_seo_title(listing: Any) -> str:
     if is_business:
         location = getattr(listing, "location", "") or ""
         city = _listing_city(location, form_data) or "Palwal"
-        cat_name = form_data.get("category") or form_data.get("categoryName") or "Business"
-        return f"{b_name or raw_title or 'Business'} - {cat_name} in {city}"
+        cat_name = _extract_primary_business_category(listing, form_data)
+        base_name = (b_name or raw_title or "Business").strip()
+        if city.lower() in base_name.lower():
+            return f"{base_name} – {cat_name}"
+        return f"{base_name} {city} – {cat_name}"
 
     price_str = format_price(price)
     price_clause = f" - {price_str}" if price_str else ""
 
     if raw_title:
         clean_title = re.sub(r"\s*\|\s*TradeCall.*$", "", raw_title, flags=re.IGNORECASE).strip()
+        # Strip erroneous BHK prefixes on non-residential properties
+        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Agriculture(?:\s+Land)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
+        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Plot)\b", r"\1", clean_title, flags=re.IGNORECASE)
+        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Commercial(?:\s+Property)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
+        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Industrial(?:\s+Land)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
         return f"{clean_title}{price_clause}"
 
     location = getattr(listing, "location", "") or ""
@@ -233,7 +257,7 @@ def build_404_html(base_html: str) -> str:
 def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     """
     Injects unique title, meta description, canonical, OG tags,
-    BreadcrumbList + RealEstateListing/LocalBusiness JSON-LD, specs table, and similar listings.
+    BreadcrumbList + RealEstateListing/LocalBusiness JSON-LD, specs table, and related listings/businesses.
     """
     form_data: Dict[str, Any] = listing.form_data if isinstance(listing.form_data, dict) else {}
 
@@ -254,6 +278,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     city = city or "Palwal"
     locality = locality or city
     city_slug = slugify_city(city) or "palwal"
+    locality_slug = slugify_locality(locality)
 
     price_str = format_price(float(listing.price)) if listing.price else ""
 
@@ -263,14 +288,17 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     if form_data.get("kind") == "business" or (b_name and not form_data.get("propType") and not listing.price):
         is_business = True
 
-    cat_name = "Business"
-    if form_data.get("category"):
-        cat_name = str(form_data.get("category"))
+    cat_name = _extract_primary_business_category(listing, form_data)
 
-    unique_code = f"TC011P-{listing.id}"
     full_title = compute_listing_seo_title(listing, db)
     if is_business:
-        headline = f"{b_name or 'Business'} - {cat_name} in {city}"
+        # Audit Point 3 Recommended H1: "Ashoka Property – Property Dealer in Greater Faridabad"
+        base_b_name = (b_name or listing.title or "Business").strip()
+        loc_target = locality if (locality and locality.lower() != city.lower()) else city
+        if loc_target.lower() in base_b_name.lower():
+            headline = f"{base_b_name} – {cat_name}"
+        else:
+            headline = f"{base_b_name} – {cat_name} in {loc_target}"
     else:
         headline = listing.title or "Property Listing"
 
@@ -283,26 +311,32 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     if is_business:
         clean_desc = re.sub(r'\s*[/,]\s*[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', clean_desc)
         clean_desc = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '', clean_desc).strip()
-    if not clean_desc:
-        # Generated strictly from verified fields without padding or invented details
-        if is_business:
-            clean_desc = f"{b_name or 'Business'} - {cat_name} in {locality}, {city}. Verified business listing on TradeCall India."
-        else:
+
+    if is_business:
+        # Audit Point 3 Recommended meta description:
+        # "Contact Ashoka Property in Greater Faridabad, Faridabad for real estate services. Find property dealers and consultants on TradeCall India."
+        loc_display = listing.location or (f"{locality}, {city}" if locality.lower() != city.lower() else city)
+        base_b_name = (b_name or listing.title or "Business").strip()
+        combined_desc = f"Contact {base_b_name} in {loc_display} for {cat_name.lower()} & real estate services. Find property dealers and consultants on TradeCall India."
+        if clean_desc and not clean_desc.lower().startswith("categories:"):
+            combined_desc = f"Contact {base_b_name} in {loc_display} for {cat_name.lower()} services. {clean_desc} Find property dealers and consultants on TradeCall India."
+    else:
+        if not clean_desc:
             prop_type = (form_data.get("propType") or "Property").replace("-", " ").title()
             for_what = (form_data.get("forWhat") or "sale").lower()
             parts = [f"{prop_type} for {for_what}", f"in {locality}, {city}"]
             if price_str:
                 parts.append(f"priced at {price_str}")
             clean_desc = f"{' '.join(parts)}. Verified property listing on TradeCall India with zero brokerage."
+        combined_desc = f"{summary_str}. {clean_desc} Contact verified owner directly on TradeCall India." if summary_str else f"{clean_desc} Contact verified owner directly on TradeCall India."
 
-    combined_desc = f"{summary_str}. {clean_desc} Contact verified owner directly on TradeCall India." if summary_str else f"{clean_desc} Contact verified owner directly on TradeCall India."
     meta_desc = clean_meta_description(combined_desc, max_len=160)
 
     canonical_path = get_listing_path(listing.id, listing.title, listing.location, listing.form_data)
     canonical_url = f"{BASE_URL}{canonical_path}"
     image_url = pick_og_image(listing.images or [])
 
-    # BreadcrumbList Schema (Home > City > Locality > Property)
+    # Audit Point 4: BreadcrumbList Schema (Home → Palwal → Omaxe City Phase-II → Property Listing)
     breadcrumb_items = [
         {
             "@type": "ListItem",
@@ -313,16 +347,16 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         {
             "@type": "ListItem",
             "position": 2,
-            "name": f"Properties in {city}",
+            "name": city,
             "item": f"{BASE_URL}/properties/{city_slug}"
         }
     ]
-    if locality and locality != city:
+    if locality and locality.lower() != city.lower() and locality_slug:
         breadcrumb_items.append({
             "@type": "ListItem",
             "position": 3,
-            "name": f"Properties in {locality}",
-            "item": f"{BASE_URL}/properties/{city_slug}"
+            "name": locality,
+            "item": f"{BASE_URL}/{city_slug}/{locality_slug}"
         })
     breadcrumb_items.append({
         "@type": "ListItem",
@@ -348,6 +382,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
             "image": [image_url],
             "address": {
                 "@type": "PostalAddress",
+                "streetAddress": locality if locality.lower() != city.lower() else city,
                 "addressLocality": city,
                 "addressRegion": "Haryana",
                 "addressCountry": "IN"
@@ -377,9 +412,9 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
 {json.dumps(entity_ld, indent=2)}
   </script>"""
 
-    # Query up to 6 listings in the same locality (approved only)
+    # Audit Points 2 & 2a: Internal links to related properties or other businesses in the same city/category
     more_in_locality = []
-    if locality and locality != city:
+    if not is_business and locality and locality.lower() != city.lower():
         more_in_locality = (
             db.query(Listing)
             .filter(
@@ -392,21 +427,69 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
             .all()
         )
 
-    # Query up to 6 similar listings in the city (approved only, excluding locality matches)
     exclude_ids = [listing.id] + [m.id for m in more_in_locality]
-    similar = (
+    city_candidates = (
         db.query(Listing)
         .filter(
             Listing.status == "approved",
-            Listing.id.notin_(exclude_ids)
+            Listing.id.notin_(exclude_ids),
+            Listing.location.ilike(f"%{city}%")
         )
         .order_by(Listing.id.desc())
-        .limit(6)
+        .limit(20)
         .all()
     )
 
+    if is_business:
+        similar = [
+            c for c in city_candidates
+            if isinstance(c.form_data, dict) and c.form_data.get("kind") == "business"
+        ][:6]
+        if len(similar) < 6:
+            extra_biz = (
+                db.query(Listing)
+                .filter(
+                    Listing.status == "approved",
+                    Listing.id.notin_(exclude_ids + [s.id for s in similar])
+                )
+                .order_by(Listing.id.desc())
+                .limit(25)
+                .all()
+            )
+            for eb in extra_biz:
+                if isinstance(eb.form_data, dict) and eb.form_data.get("kind") == "business":
+                    similar.append(eb)
+                    if len(similar) >= 6:
+                        break
+    else:
+        similar = [
+            c for c in city_candidates
+            if not (isinstance(c.form_data, dict) and c.form_data.get("kind") in ("business", "buyer"))
+        ][:6]
+        if len(similar) < 6:
+            extra_prop = (
+                db.query(Listing)
+                .filter(
+                    Listing.status == "approved",
+                    Listing.id.notin_(exclude_ids + [s.id for s in similar])
+                )
+                .order_by(Listing.id.desc())
+                .limit(12)
+                .all()
+            )
+            for ep in extra_prop:
+                if not (isinstance(ep.form_data, dict) and ep.form_data.get("kind") in ("business", "buyer")):
+                    similar.append(ep)
+                    if len(similar) >= 6:
+                        break
+
     def _render_listing_li(s: Listing) -> str:
         s_path = get_listing_path(s.id, s.title, s.location, s.form_data)
+        s_fd = s.form_data if isinstance(s.form_data, dict) else {}
+        if s_fd.get("kind") == "business":
+            s_cat = _extract_primary_business_category(s, s_fd)
+            s_city = _listing_city(s.location, s_fd)
+            return f'<li><a href="{s_path}">{html_lib.escape(s.title or "Business")} – {html_lib.escape(s_cat)} in {html_lib.escape(s_city)}</a></li>'
         s_p = format_price(float(s.price)) if s.price else ""
         price_tag = f" ({s_p})" if s_p else ""
         return f'<li><a href="{s_path}">{html_lib.escape(s.title or "Property Listing")}</a>{price_tag}</li>'
@@ -414,7 +497,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     locality_html = "\n            ".join(_render_listing_li(s) for s in more_in_locality)
     similar_html = "\n            ".join(_render_listing_li(s) for s in similar)
 
-    # Specification table: strictly non-empty, valid rows (no "N/A" or empty cells)
+    # Specification table: strictly non-empty, valid rows
     specs = []
     def _add_spec(label: str, val: Any):
         if val is None:
@@ -429,6 +512,8 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         w in (listing.title or "").lower() for w in ("flat", "house", "villa", "builder floor", "apartment", "penthouse")
     )
 
+    if is_business:
+        _add_spec("Business Category", cat_name)
     if form_data.get("propType"):
         _add_spec("Property Type", str(form_data.get("propType")).replace("-", " ").title())
     if is_residential and form_data.get("bhk"):
@@ -449,7 +534,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         _add_spec("Facing", form_data.get("facing"))
     if form_data.get("possession"):
         _add_spec("Possession / Age", form_data.get("possession"))
-    if price_str:
+    if price_str and not is_business:
         _add_spec("Price", price_str)
     if locality:
         _add_spec("Locality", locality)
@@ -477,9 +562,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     # 3. Canonical
     html = set_or_replace_canonical(html, canonical_url)
 
-    # 4. Robots:
-    # Rule B4: Thin business pages (no description and no useful contact details) must be noindex, follow.
-    # Rule B5: "Looking to buy..." / requirement posts must be noindex, follow.
+    # 4. Robots
     if is_thin_business(listing) or is_buyer_requirement(listing.title, form_data):
         robots_content = "noindex, follow"
     else:
@@ -507,8 +590,14 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     escaped_headline = html_lib.escape(headline)
     escaped_price = html_lib.escape(price_str)
     escaped_loc = html_lib.escape(listing.location or f"{locality}, {city}")
-    escaped_desc_body = html_lib.escape(clean_desc)
+    escaped_desc_body = html_lib.escape(clean_desc or combined_desc)
     escaped_img_src = html_lib.escape(image_url, quote=True)
+
+    locality_crumb_html = (
+        f' &rarr; <a href="/{city_slug}/{locality_slug}">{html_lib.escape(locality)}</a>'
+        if locality and locality.lower() != city.lower() and locality_slug
+        else ""
+    )
 
     more_locality_section = f"""<section class="locality-listings-section" style="margin-top: 16px;">
         <h2>More Properties in {html_lib.escape(locality)}</h2>
@@ -517,10 +606,24 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         </ul>
       </section>""" if locality_html else ""
 
+    related_heading = (
+        f"Other {html_lib.escape(cat_name)} &amp; Businesses in {html_lib.escape(city)}"
+        if is_business
+        else f"Similar Properties in {html_lib.escape(city)}"
+    )
+
+    hub_links_html = f"""<nav class="related-hub-links" style="margin-top: 12px;">
+        <a href="/properties/{city_slug}">Properties in {html_lib.escape(city)}</a> |
+        <a href="/business-directory/{city_slug}">Businesses in {html_lib.escape(city)}</a> |
+        <a href="/business-directory/{city_slug}/property-dealers">Property Dealers in {html_lib.escape(city)}</a> |
+        <a href="/business-directory">Business Directory</a> |
+        <a href="/contact">Contact TradeCall India</a>
+      </nav>"""
+
     rendered_root = f'''<div id="root">
     <article class="listing-ssr-preview" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
       <nav aria-label="Breadcrumb" class="breadcrumbs">
-        <a href="/">Home</a> &gt; <a href="/properties/{city_slug}">Properties in {html_lib.escape(city)}</a> &gt; <span>{escaped_headline}</span>
+        <a href="/">Home</a> &rarr; <a href="/properties/{city_slug}">{html_lib.escape(city)}</a>{locality_crumb_html} &rarr; <span>{escaped_headline}</span>
       </nav>
       <h1>{escaped_headline}</h1>
       <p class="listing-price">{escaped_price}</p>
@@ -534,11 +637,12 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
       </table>
       {more_locality_section}
       <section class="similar-listings-section">
-        <h2>Similar Properties in {html_lib.escape(city)}</h2>
+        <h2>{related_heading}</h2>
         <ul>
           {similar_html}
         </ul>
       </section>
+      {hub_links_html}
     </article>
   </div>'''
 
@@ -586,7 +690,8 @@ def get_listing_page_by_slug(city_slug: str, title_slug: str, unique_code: str, 
     if city_slug.lower() in {
         "api", "uploads", "assets", "static", "docs", "redoc", "openapi.json",
         "sitemap", "properties", "pages", "blog", "search", "about", "contact",
-        "cities", "business-directory", "privacy", "terms-of-use", "advertise", "post-listing"
+        "cities", "business-directory", "businesses", "privacy", "terms-of-use",
+        "advertise", "post-listing", "faq", "faqs"
     }:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
