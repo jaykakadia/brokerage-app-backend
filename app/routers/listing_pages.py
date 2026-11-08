@@ -100,7 +100,7 @@ def compute_base_seo_title(listing: Any) -> str:
     raw_title = (getattr(listing, "title", "") or "").strip()
 
     # Business listings
-    b_name = form_data.get("businessName")
+    b_name = form_data.get("businessName") or form_data.get("name")
     is_business = form_data.get("kind") == "business" or bool(b_name and not form_data.get("propType") and not price)
     if is_business:
         location = getattr(listing, "location", "") or ""
@@ -283,7 +283,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
     price_str = format_price(float(listing.price)) if listing.price else ""
 
     # Check if business listing or real estate
-    b_name = form_data.get("businessName")
+    b_name = form_data.get("businessName") or form_data.get("name")
     is_business = False
     if form_data.get("kind") == "business" or (b_name and not form_data.get("propType") and not listing.price):
         is_business = True

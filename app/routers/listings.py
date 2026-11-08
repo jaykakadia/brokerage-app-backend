@@ -301,8 +301,15 @@ def get_public_stats(db: Session = Depends(get_db)):
         Listing.status == "approved", Listing.is_featured == True
     ).scalar() or 0
     # One listing's location reads "Palwal", "Palwal, Haryana" or "Omaxe City, Palwal, Haryana",
-    # so cities are counted by the city name, not the distinct location text
-    approved = db.query(Listing.location, Listing.form_data).filter(Listing.status == "approved").all()
+    # so cities are counted by the city name, not the distinct location text.
+    # Exclude business listings — city counts must match what the properties page shows.
+    approved = db.query(Listing.location, Listing.form_data).filter(
+        Listing.status == "approved",
+        or_(
+            func.json_extract_path_text(Listing.form_data, "kind") != "business",
+            func.json_extract_path_text(Listing.form_data, "kind").is_(None)
+        )
+    ).all()
     city_counter: dict[str, int] = {}
     for loc, fd in approved:
         c = _listing_city(loc, fd)

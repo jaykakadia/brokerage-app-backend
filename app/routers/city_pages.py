@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
@@ -173,10 +173,16 @@ def get_city_approved_listings(city_slug: str, city_name: str, db: Session) -> L
 
 
 def get_active_cities_summary(db: Session) -> List[Dict[str, Any]]:
-    """Returns cities that have >= 1 approved listing, sorted by listing count descending."""
+    """Returns cities that have >= 1 approved property listing, sorted by listing count descending."""
     all_approved = (
         db.query(Listing.location, Listing.form_data)
-        .filter(Listing.status == "approved")
+        .filter(
+            Listing.status == "approved",
+            or_(
+                func.json_extract_path_text(Listing.form_data, "kind") != "business",
+                func.json_extract_path_text(Listing.form_data, "kind").is_(None)
+            )
+        )
         .all()
     )
     city_counts: Dict[str, Dict[str, Any]] = {}
