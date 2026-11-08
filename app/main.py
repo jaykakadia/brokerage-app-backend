@@ -29,6 +29,7 @@ from app.routers.legacy_compat import router as legacy_router
 from app.routers.page_metadata import router as page_metadata_router
 from app.routers.audit_logs import router as audit_logs_router
 from app.routers.backup import router as backup_router
+from app.routers.support_chat import router as support_chat_router
 
 
 app = FastAPI(
@@ -81,6 +82,7 @@ app.include_router(enquiries_router)
 app.include_router(page_metadata_router)
 app.include_router(audit_logs_router)
 app.include_router(backup_router)
+app.include_router(support_chat_router)
 app.include_router(settings_router)
 app.include_router(public_settings_router)
 app.include_router(sitemap_router)

@@ -87,8 +87,10 @@ The checked-in `.env.example` uses a placeholder PostgreSQL URL. Replace it with
 ```bash
 alembic upgrade head
 python -m app.cli create-admin --email admin@example.com --name "TradeCall Admin"
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
 ```
+
+> **Note:** Use `--reload-dir app` (or `--reload-exclude venv`) to avoid reloading on changes inside `venv/`, uploads, or SQLite database files.
 
 The admin command prompts for the password without echoing it. It can also read `ADMIN_PASSWORD` from the environment; do not pass a password as a command-line argument.
 
