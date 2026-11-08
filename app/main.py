@@ -63,6 +63,7 @@ async def add_x_robots_tag_middleware(request: Request, call_next):
 # 2. Static File Serving for Uploaded Assets
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "listings"), exist_ok=True)
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "support_chat"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # 3. Include Routers

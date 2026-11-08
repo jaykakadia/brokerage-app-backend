@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SupportConversationInit(BaseModel):
@@ -11,7 +11,16 @@ class SupportConversationInit(BaseModel):
 
 
 class SupportMessageCreate(BaseModel):
-    message: str = Field(..., min_length=1, max_length=5000)
+    message: Optional[str] = Field(None, max_length=5000)
+    attachment_url: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_content(self):
+        msg = (self.message or "").strip()
+        att = (self.attachment_url or "").strip()
+        if not msg and not att:
+            raise ValueError("Either message text or attachment_url must be provided.")
+        return self
 
 
 class SupportMessageResponse(BaseModel):
@@ -23,6 +32,7 @@ class SupportMessageResponse(BaseModel):
     sender_id: Optional[int] = None
     sender_name: str
     message: str
+    attachment_url: Optional[str] = None
     is_read: bool
     created_at: datetime
 

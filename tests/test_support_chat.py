@@ -147,3 +147,29 @@ def test_support_chat_full_flow(client, admin_user, test_user):
     })
     assert res_reopened_msg.status_code == 200
 
+    # 13. Visitor uploads an image
+    dummy_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    upload_res = client.post(
+        "/api/v1/support/upload",
+        data={"session_id": session_id, "message": "Here is my screenshot"},
+        files={"file": ("screenshot.png", dummy_png, "image/png")}
+    )
+    assert upload_res.status_code == 200, upload_res.text
+    upload_data = upload_res.json()["data"]
+    assert upload_data["attachment_url"] is not None
+    assert upload_data["attachment_url"].startswith("/uploads/support_chat/")
+    assert upload_data["message"] == "Here is my screenshot"
+
+    # 14. Admin uploads an image in reply
+    _login(client, admin_user, "adminpass123")
+    admin_upload_res = client.post(
+        f"/api/v1/admin/support/conversations/{conv_id}/upload",
+        data={"message": "Here is the solution screenshot"},
+        files={"file": ("solution.png", dummy_png, "image/png")}
+    )
+    assert admin_upload_res.status_code == 200, admin_upload_res.text
+    admin_upload_data = admin_upload_res.json()["data"]
+    assert admin_upload_data["attachment_url"] is not None
+    assert admin_upload_data["attachment_url"].startswith("/uploads/support_chat/")
+    assert admin_upload_data["sender_type"] == "admin"
+

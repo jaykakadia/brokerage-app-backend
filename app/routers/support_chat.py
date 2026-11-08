@@ -1,11 +1,13 @@
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, File, Form, UploadFile
 from sqlalchemy import func, or_, and_, desc
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.dependencies import get_current_admin, get_optional_user, get_db
 from app.db.session import SessionLocal
 from app.db.models.support_chat import SupportConversation, SupportMessage
@@ -129,6 +131,34 @@ def get_admin_counts(db: Session) -> dict:
     }
 
 
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+def _save_vps_support_image(file: UploadFile, content: bytes) -> str:
+    """Save support chat image exclusively to the VPS local disk under uploads/support_chat/."""
+    filename = file.filename or "image.jpg"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}"
+        )
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image exceeds maximum allowed size (10 MB).")
+
+    # Destination directory on VPS disk (no external cloud storage)
+    target_dir = os.path.join(settings.UPLOAD_DIR, "support_chat")
+    os.makedirs(target_dir, exist_ok=True)
+
+    safe_name = f"{uuid.uuid4().hex}{ext}"
+    target_path = os.path.join(target_dir, safe_name)
+
+    with open(target_path, "wb") as f:
+        f.write(content)
+
+    return f"/uploads/support_chat/{safe_name}"
+
+
 def format_conversation_dict(conv: SupportConversation) -> dict:
     if conv.user:
         display_name = conv.user.name
@@ -149,6 +179,7 @@ def format_conversation_dict(conv: SupportConversation) -> dict:
             "sender_id": m.sender_id,
             "sender_name": m.sender_name,
             "message": m.message,
+            "attachment_url": m.attachment_url,
             "is_read": m.is_read,
             "created_at": m.created_at
         }
@@ -186,7 +217,8 @@ def format_list_item(conv: SupportConversation) -> dict:
 
     last_text = None
     if conv.messages:
-        last_text = conv.messages[-1].message
+        last_m = conv.messages[-1]
+        last_text = last_m.message or ("📷 Photo" if getattr(last_m, "attachment_url", None) else "")
 
     return {
         "id": conv.id,
@@ -436,9 +468,12 @@ async def send_visitor_message(
             detail=f"This ticket is {conv.status}. Please reopen the ticket to continue chatting."
         )
 
-    clean_text = payload.message.strip()
+    clean_text = (payload.message or "").strip()
+    attachment_url = (payload.attachment_url or "").strip() or None
+    if not clean_text and not attachment_url:
+        raise HTTPException(status_code=400, detail="Either message text or attachment must be provided.")
     if not clean_text:
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+        clean_text = "📷 Photo"
 
     current_user = get_optional_user(request, db)
     sender_type = "user" if current_user else "guest"
@@ -452,6 +487,7 @@ async def send_visitor_message(
         sender_id=sender_id,
         sender_name=sender_name,
         message=clean_text,
+        attachment_url=attachment_url,
         is_read=False,
         created_at=now
     )
@@ -474,6 +510,7 @@ async def send_visitor_message(
         "sender_id": new_msg.sender_id,
         "sender_name": new_msg.sender_name,
         "message": new_msg.message,
+        "attachment_url": new_msg.attachment_url,
         "is_read": new_msg.is_read,
         "created_at": new_msg.created_at.isoformat()
     }
@@ -489,6 +526,91 @@ async def send_visitor_message(
     return APIResponse(
         status="success",
         message="Message sent",
+        data=new_msg
+    )
+
+
+@router.post("/support/upload", response_model=APIResponse[SupportMessageResponse])
+async def upload_support_image_visitor(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+    message: Optional[str] = Form(None),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Visitor uploads an image in the support chat. Stored on VPS only."""
+    conv = db.query(SupportConversation).filter(
+        SupportConversation.session_id == session_id,
+        SupportConversation.is_deleted.is_(False)
+    ).first()
+
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    if conv.status in ("closed", "resolved"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"This ticket is {conv.status}. Please reopen the ticket to continue chatting."
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    url = _save_vps_support_image(file, content)
+
+    current_user = get_optional_user(request, db)
+    sender_type = "user" if current_user else "guest"
+    sender_id = current_user.id if current_user else None
+    sender_name = current_user.name if current_user else (conv.guest_name or "Visitor")
+
+    clean_caption = (message or "").strip() or "📷 Photo"
+
+    now = datetime.now(timezone.utc)
+    new_msg = SupportMessage(
+        conversation_id=conv.id,
+        sender_type=sender_type,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        message=clean_caption,
+        attachment_url=url,
+        is_read=False,
+        created_at=now
+    )
+    db.add(new_msg)
+
+    conv.last_message_at = now
+    conv.unread_admin_count += 1
+    if conv.status == "open":
+        conv.status = "in_progress"
+
+    db.commit()
+    db.refresh(new_msg)
+    db.refresh(conv)
+
+    msg_data = {
+        "id": new_msg.id,
+        "conversation_id": new_msg.conversation_id,
+        "session_id": conv.session_id,
+        "sender_type": new_msg.sender_type,
+        "sender_id": new_msg.sender_id,
+        "sender_name": new_msg.sender_name,
+        "message": new_msg.message,
+        "attachment_url": new_msg.attachment_url,
+        "is_read": new_msg.is_read,
+        "created_at": new_msg.created_at.isoformat()
+    }
+
+    await manager.broadcast_message(conv.session_id, {
+        "type": "new_message",
+        "data": msg_data,
+        "conversation": format_list_item(conv),
+        "counts": get_admin_counts(db)
+    })
+
+    return APIResponse(
+        status="success",
+        message="Image sent",
         data=new_msg
     )
 
@@ -713,9 +835,12 @@ async def admin_reply(
             detail=f"This ticket is {conv.status}. Please change status to 'open' or 'in_progress' to send a reply."
         )
 
-    clean_text = payload.message.strip()
+    clean_text = (payload.message or "").strip()
+    attachment_url = (payload.attachment_url or "").strip() or None
+    if not clean_text and not attachment_url:
+        raise HTTPException(status_code=400, detail="Either message text or attachment must be provided.")
     if not clean_text:
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+        clean_text = "📷 Photo"
 
     now = datetime.now(timezone.utc)
     new_msg = SupportMessage(
@@ -724,6 +849,7 @@ async def admin_reply(
         sender_id=admin.id,
         sender_name="Customer Support",
         message=clean_text,
+        attachment_url=attachment_url,
         is_read=False,
         created_at=now
     )
@@ -747,6 +873,7 @@ async def admin_reply(
         "sender_id": new_msg.sender_id,
         "sender_name": new_msg.sender_name,
         "message": new_msg.message,
+        "attachment_url": new_msg.attachment_url,
         "is_read": new_msg.is_read,
         "created_at": new_msg.created_at.isoformat()
     }
@@ -762,6 +889,86 @@ async def admin_reply(
     return APIResponse(
         status="success",
         message="Reply sent",
+        data=new_msg
+    )
+
+
+@router.post("/admin/support/conversations/{conv_id}/upload", response_model=APIResponse[SupportMessageResponse])
+async def upload_support_image_admin(
+    conv_id: int,
+    file: UploadFile = File(...),
+    message: Optional[str] = Form(None),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin uploads an image in the support chat. Stored on VPS only."""
+    conv = db.query(SupportConversation).filter(
+        SupportConversation.id == conv_id,
+        SupportConversation.is_deleted.is_(False)
+    ).first()
+
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    if conv.status in ("closed", "resolved"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"This ticket is {conv.status}. Please change status to 'open' or 'in_progress' to send a reply."
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    url = _save_vps_support_image(file, content)
+    clean_caption = (message or "").strip() or "📷 Photo"
+
+    now = datetime.now(timezone.utc)
+    new_msg = SupportMessage(
+        conversation_id=conv.id,
+        sender_type="admin",
+        sender_id=admin.id,
+        sender_name="Customer Support",
+        message=clean_caption,
+        attachment_url=url,
+        is_read=False,
+        created_at=now
+    )
+    db.add(new_msg)
+
+    conv.last_message_at = now
+    conv.unread_user_count += 1
+    conv.unread_admin_count = 0
+    if conv.status == "open":
+        conv.status = "in_progress"
+
+    db.commit()
+    db.refresh(new_msg)
+    db.refresh(conv)
+
+    msg_data = {
+        "id": new_msg.id,
+        "conversation_id": new_msg.conversation_id,
+        "session_id": conv.session_id,
+        "sender_type": new_msg.sender_type,
+        "sender_id": new_msg.sender_id,
+        "sender_name": new_msg.sender_name,
+        "message": new_msg.message,
+        "attachment_url": new_msg.attachment_url,
+        "is_read": new_msg.is_read,
+        "created_at": new_msg.created_at.isoformat()
+    }
+
+    await manager.broadcast_message(conv.session_id, {
+        "type": "new_message",
+        "data": msg_data,
+        "conversation": format_list_item(conv),
+        "counts": get_admin_counts(db)
+    })
+
+    return APIResponse(
+        status="success",
+        message="Image sent",
         data=new_msg
     )
 
@@ -874,8 +1081,11 @@ async def visitor_websocket_endpoint(websocket: WebSocket, session_id: str):
 
             if cmd_type == "send_message":
                 text = (cmd.get("message") or "").strip()
-                if not text:
+                att_url = (cmd.get("attachment_url") or "").strip() or None
+                if not text and not att_url:
                     continue
+                if not text:
+                    text = "📷 Photo"
                 db = SessionLocal()
                 try:
                     conv = db.query(SupportConversation).filter(
@@ -895,6 +1105,7 @@ async def visitor_websocket_endpoint(websocket: WebSocket, session_id: str):
                         sender_id=conv.user_id,
                         sender_name=sender_name,
                         message=text,
+                        attachment_url=att_url,
                         is_read=False,
                         created_at=now
                     )
@@ -916,6 +1127,7 @@ async def visitor_websocket_endpoint(websocket: WebSocket, session_id: str):
                         "sender_id": new_msg.sender_id,
                         "sender_name": new_msg.sender_name,
                         "message": new_msg.message,
+                        "attachment_url": new_msg.attachment_url,
                         "is_read": new_msg.is_read,
                         "created_at": new_msg.created_at.isoformat(),
                         "temp_id": cmd.get("temp_id")
@@ -1073,8 +1285,11 @@ async def admin_websocket_endpoint(websocket: WebSocket):
             elif cmd_type == "send_reply":
                 conv_id = cmd.get("conversation_id")
                 text = (cmd.get("message") or "").strip()
-                if not conv_id or not text:
+                att_url = (cmd.get("attachment_url") or "").strip() or None
+                if not conv_id or (not text and not att_url):
                     continue
+                if not text:
+                    text = "📷 Photo"
                 db = SessionLocal()
                 try:
                     conv = db.query(SupportConversation).filter(
@@ -1091,6 +1306,7 @@ async def admin_websocket_endpoint(websocket: WebSocket):
                         sender_id=cmd.get("admin_id"),
                         sender_name="Customer Support",
                         message=text,
+                        attachment_url=att_url,
                         is_read=False,
                         created_at=now
                     )
@@ -1113,6 +1329,7 @@ async def admin_websocket_endpoint(websocket: WebSocket):
                         "sender_id": new_msg.sender_id,
                         "sender_name": new_msg.sender_name,
                         "message": new_msg.message,
+                        "attachment_url": new_msg.attachment_url,
                         "is_read": new_msg.is_read,
                         "created_at": new_msg.created_at.isoformat(),
                         "temp_id": cmd.get("temp_id")

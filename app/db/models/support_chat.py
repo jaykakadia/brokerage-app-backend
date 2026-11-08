@@ -43,6 +43,7 @@ class SupportMessage(Base, TimestampMixin):
     sender_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     sender_name: Mapped[str] = mapped_column(String(150), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    attachment_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     conversation = relationship("SupportConversation", back_populates="messages")
