@@ -451,3 +451,44 @@ def test_business_directory_public_mobile_and_no_email_leak(client, test_user, a
 
 
 
+
+
+def test_prop_type_filter_uses_saved_type_not_title_substrings(client, admin_user):
+    """'Village' in a title must not put agriculture land or plots under House / Villa."""
+    import json
+    from app.routers.listings import public_listings_cache
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    samples = [
+        ("Agriculture Land for Sale in Village Khambi, Palwal", {"kind": "owner", "propType": "agriculture"}),
+        ("Plot for Sale in Village Kithwari, Palwal", {"kind": "owner", "propType": "plot"}),
+        ("2BHK House / Villa for Sale in Village Dubaru, Palwal", {"kind": "owner", "propType": "house"}),
+        ("Independent Kothi in Sector 2", {"kind": "property", "propType": "Villa"}),
+        ("Old Villa near Main Road", {"kind": "property"}),
+        ("Shop in Village Market", {"kind": "property"}),
+        ("Royal House Builders", {"kind": "business", "businessName": "Royal House Builders"}),
+    ]
+    ids = {}
+    for title, form in samples:
+        res = client.post("/api/v1/listings", data={
+            "title": title, "location": "Palwal, Haryana", "price": 1000000,
+            "owner_name": "Owner", "owner_role": "Owner", "form_data": json.dumps(form),
+        })
+        assert res.status_code == 200
+        ids[title] = res.json()["data"]["id"]
+        client.post(f"/api/v1/listings/{ids[title]}/status", json={"action": "approve"})
+    public_listings_cache.clear()
+
+    def titles_for(pt):
+        res = client.get("/api/v1/listings", params={"prop_type": pt, "limit": 100})
+        assert res.status_code == 200
+        return {l["title"] for l in res.json()["data"] if l["id"] in ids.values()}
+
+    assert titles_for("house") == {
+        "2BHK House / Villa for Sale in Village Dubaru, Palwal",
+        "Independent Kothi in Sector 2",
+        "Old Villa near Main Road",
+    }
+    assert titles_for("agriculture") == {"Agriculture Land for Sale in Village Khambi, Palwal"}
+    assert titles_for("plot") == {"Plot for Sale in Village Kithwari, Palwal"}
+    assert titles_for("commercial") == {"Shop in Village Market"}

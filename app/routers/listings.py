@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, and_, cast, String
 
 from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
 from app.db.models.listing import Listing, ListingImage
@@ -36,6 +36,33 @@ CARD_FORM_FIELDS = (
     "plotArea", "plotUnit", "agriArea", "agriUnit", "area", "unit",
     "totalArea", "totalUnit", "builtArea", "builtUnit",
 )
+
+
+# Saved propType values (lowercase) that count as each filter type; older listings used some of the aliases
+PROP_TYPE_ALIASES = {
+    "flat": ("flat", "apartment", "builder_floor", "builder floor", "studio"),
+    "house": ("house", "villa", "kothi", "independent house", "bungalow"),
+    "plot": ("plot", "plots"),
+    "agriculture": ("agriculture", "agricultural", "farm_land", "farm land"),
+    "commercial": ("commercial", "shop", "office", "showroom", "warehouse"),
+}
+
+# Title words used to place a listing that has no saved propType
+PROP_TYPE_TITLE_WORDS = {
+    "flat": ("flat", "apartment", "builder floor"),
+    "house": ("house", "villa", "kothi", "bungalow"),
+    "plot": ("plot", "plots"),
+    "agriculture": ("agriculture", "agricultural", "farm land"),
+    "commercial": ("commercial", "shop", "office", "showroom", "warehouse"),
+}
+
+
+def _title_has_word(word: str):
+    """Title contains `word` as a whole word ("villa" matches "House / Villa for Sale", not "Village")."""
+    return or_(*[
+        Listing.title.ilike(pattern)
+        for pattern in (word, f"{word} %", f"% {word}", f"% {word} %", f"{word},%", f"% {word},%")
+    ])
 
 
 def _sanitize_email_leak(text: Optional[str]) -> Optional[str]:
@@ -448,46 +475,24 @@ def get_listings(
     if ref_code:
         query = query.filter(Listing.reference_code == ref_code.strip())
 
-    # Property type filter
+    # Property type filter: the saved propType decides; the title is only a fallback for listings without one
     if prop_type:
         pt = prop_type.strip().lower()
-        conds = [
-            func.json_extract_path_text(Listing.form_data, "propType").ilike(f"%{pt}%"),
-            Listing.title.ilike(f"%{pt}%")
-        ]
-        if pt == "flat":
-            conds.extend([
-                func.json_extract_path_text(Listing.form_data, "propType").in_(["apartment", "builder_floor"]),
-                Listing.title.ilike("%apartment%"),
-                Listing.title.ilike("%builder floor%")
-            ])
-        elif pt == "house":
-            conds.extend([
-                func.json_extract_path_text(Listing.form_data, "propType").in_(["villa", "kothi"]),
-                Listing.title.ilike("%villa%"),
-                Listing.title.ilike("%kothi%"),
-                Listing.title.ilike("%bungalow%")
-            ])
-        elif pt == "plot":
-            conds.extend([
-                func.json_extract_path_text(Listing.form_data, "propType") == "plots",
-                Listing.title.ilike("%plots%")
-            ])
-        elif pt == "agriculture":
-            conds.extend([
-                func.json_extract_path_text(Listing.form_data, "propType").in_(["agricultural", "farm_land"]),
-                Listing.title.ilike("%agricultural%"),
-                Listing.title.ilike("%farm land%")
-            ])
-        elif pt == "commercial":
-            conds.extend([
-                func.json_extract_path_text(Listing.form_data, "propType").in_(["shop", "office", "showroom", "warehouse"]),
-                Listing.title.ilike("%shop%"),
-                Listing.title.ilike("%office%"),
-                Listing.title.ilike("%showroom%"),
-                Listing.title.ilike("%warehouse%")
-            ])
-        query = query.filter(or_(*conds))
+        saved_type = func.lower(func.json_extract_path_text(Listing.form_data, "propType"))
+        title_word_conds = [_title_has_word(w) for w in PROP_TYPE_TITLE_WORDS.get(pt, (pt.replace("_", " "),))]
+        query = query.filter(
+            or_(
+                saved_type.in_(PROP_TYPE_ALIASES.get(pt, (pt,))),
+                and_(
+                    or_(saved_type.is_(None), saved_type == ""),
+                    or_(
+                        func.json_extract_path_text(Listing.form_data, "kind").is_(None),
+                        func.json_extract_path_text(Listing.form_data, "kind") != "business"
+                    ),
+                    or_(*title_word_conds)
+                )
+            )
+        )
 
     # Deal filter (sale, rent, buy)
     if deal:

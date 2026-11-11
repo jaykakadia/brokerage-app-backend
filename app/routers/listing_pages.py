@@ -508,8 +508,10 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         specs.append(f'<tr><th>{html_lib.escape(label)}</th><td>{html_lib.escape(s)}</td></tr>')
 
     raw_pt = str(form_data.get("propType") or "").lower().strip()
-    is_residential = raw_pt in ("flat", "house") or any(
-        w in (listing.title or "").lower() for w in ("flat", "house", "villa", "builder floor", "apartment", "penthouse")
+    # Saved propType decides; title words (whole words, so "Village" is not "villa") only when it is missing
+    title_words = set(re.findall(r"[a-z]+", (listing.title or "").lower()))
+    is_residential = raw_pt in ("flat", "house", "apartment", "builder_floor", "villa", "kothi") or (
+        not raw_pt and bool(title_words & {"flat", "house", "villa", "apartment", "penthouse", "kothi"})
     )
 
     if is_business:
