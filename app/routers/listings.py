@@ -30,6 +30,12 @@ router = APIRouter(prefix="/api/v1/listings", tags=["Listings"])
 # Contact details and links a viewer only gets by unlocking the contact (POST /api/v1/leads/reveal)
 LOCKED_FORM_FIELDS = ("mobile", "whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl", "person")
 BUSINESS_LOCKED_FORM_FIELDS = ("whatsapp", "email", "websiteUrl", "facebookUrl", "xUrl", "youtubeUrl")
+# form_data keys a property card needs to build its display title ("180 Sq.Yd Plot for Sale in ...")
+CARD_FORM_FIELDS = (
+    "kind", "propType", "forWhat", "bhk", "locality", "city",
+    "plotArea", "plotUnit", "agriArea", "agriUnit", "area", "unit",
+    "totalArea", "totalUnit", "builtArea", "builtUnit",
+)
 
 
 def _sanitize_email_leak(text: Optional[str]) -> Optional[str]:
@@ -142,6 +148,10 @@ def _listing_for_card(listing: Listing, is_admin: bool = False) -> dict:
         "created_at": listing.created_at.isoformat() if listing.created_at else None,
         "seo_title": compute_listing_seo_title(listing)
     }
+    if kind != "business" and isinstance(listing.form_data, dict):
+        card["form_data"] = {
+            k: listing.form_data[k] for k in CARD_FORM_FIELDS if listing.form_data.get(k) not in (None, "")
+        }
     if kind == "business":
         mobile = None
         if isinstance(listing.form_data, dict):

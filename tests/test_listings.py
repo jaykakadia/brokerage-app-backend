@@ -262,7 +262,10 @@ def test_listings_pagination_caching_and_card_fields(client, admin_user, test_us
             "price": 1000000 * i,
             "owner_name": f"Owner {i}",
             "owner_role": "Owner",
-            "form_data": json.dumps({"kind": "property", "propType": "flat", "city": "Palwal"})
+            "form_data": json.dumps({
+                "kind": "property", "propType": "flat", "city": "Palwal", "area": "1200", "unit": "Sq.Ft",
+                "mobile": "9876543210", "person": "Owner Person", "description": "Long text", "amenities": ["Lift"]
+            })
         })
         assert create_res.status_code == 200
         l_id = create_res.json()["data"]["id"]
@@ -295,8 +298,8 @@ def test_listings_pagination_caching_and_card_fields(client, admin_user, test_us
     assert "prop_type" in card_item
     assert "verified" in card_item
     assert "is_featured" in card_item
-    # Must NOT have raw form_data in list response
-    assert card_item.get("form_data") is None
+    # List response carries only the form_data keys a card title needs, never contacts or other wizard data
+    assert card_item["form_data"] == {"kind": "property", "propType": "flat", "city": "Palwal", "area": "1200", "unit": "Sq.Ft"}
     # Must NOT leak assigned_email to public viewer
     assert card_item.get("assigned_email") is None
 
