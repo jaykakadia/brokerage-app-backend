@@ -25,6 +25,7 @@ from app.routers.legacy_redirects import router as legacy_redirects_router
 from app.routers.public_pages import router as public_pages_router, catch_all_router
 from app.routers.city_pages import router as city_pages_router
 from app.routers.listing_pages import router as listing_pages_router
+from app.routers.type_hub_pages import router as type_hub_pages_router
 from app.routers.legacy_compat import router as legacy_router
 from app.routers.page_metadata import router as page_metadata_router
 from app.routers.audit_logs import router as audit_logs_router
@@ -90,6 +91,8 @@ app.include_router(sitemap_router)
 app.include_router(legacy_redirects_router)
 app.include_router(legacy_router)
 app.include_router(public_pages_router)
+# Before listing pages: their /{city}/{title}/{code} route would otherwise swallow /properties/{city}/{type}
+app.include_router(type_hub_pages_router)
 app.include_router(listing_pages_router)
 app.include_router(city_pages_router)
 from fastapi.encoders import jsonable_encoder

@@ -15,6 +15,7 @@ from app.db.models.listing import Listing
 from app.db.models.page_metadata import PageMetadata
 from app.core.cities import get_city_display_name, slugify_city, MIN_HUB_LISTINGS
 from app.routers.sitemap import get_listing_path
+from app.core.type_hubs import MIN_TYPE_HUB_LISTINGS, compute_type_hub_counts, listing_display_title
 
 router = APIRouter(tags=["City Pages"])
 
@@ -367,6 +368,12 @@ def get_home_page(db: Session = Depends(get_db)):
         for c in indexable_hubs
     )
 
+    # 6b. Property-type hubs worth linking from the home page ("Plots in Palwal (103)")
+    type_hub_links = "\n".join(
+        f'          <li><a href="/properties/{h["city_slug"]}/{h["type_slug"]}">{html_lib.escape(h["name"])} in {html_lib.escape(h["city"])}</a> ({h["count"]})</li>'
+        for h in compute_type_hub_counts(db)[:16] if h["count"] >= MIN_TYPE_HUB_LISTINGS
+    )
+
     # 7. Gather latest approved listings
     latest_listings = (
         db.query(Listing)
@@ -380,7 +387,7 @@ def get_home_page(db: Session = Depends(get_db)):
         l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
         p_str = format_price(float(l.price)) if l.price else ""
         price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
-        latest_items.append(f'<li><a href="{l_path}">{html_lib.escape(l.title or "Property")}</a>{price_tag} in {html_lib.escape(l.location or "NCR")}</li>')
+        latest_items.append(f'<li><a href="{l_path}">{html_lib.escape(listing_display_title(l.title, l.form_data) or "Property")}</a>{price_tag} in {html_lib.escape(l.location or "NCR")}</li>')
     latest_markup = "\n            ".join(latest_items)
 
     faq_markup = "\n".join(
@@ -412,13 +419,9 @@ def get_home_page(db: Session = Depends(get_db)):
         </nav>
       </section>
       <section>
-        <h2>Explore Property Types in Palwal & NCR</h2>
+        <h2>Popular Property Searches</h2>
         <ul>
-          <li><a href="/properties/palwal">Residential Flats & Builder Floors</a></li>
-          <li><a href="/properties/palwal">Independent Houses & Villas</a></li>
-          <li><a href="/properties/palwal">Commercial Shops & Office Spaces</a></li>
-          <li><a href="/properties/palwal">Industrial Plots & Land</a></li>
-          <li><a href="/properties/palwal">Agricultural Land & Farmhouses</a></li>
+{type_hub_links}
         </ul>
       </section>
       <section>
@@ -561,7 +564,7 @@ def get_city_properties_page(
         item_list_elements.append({
             "@type": "ListItem",
             "position": (page - 1) * PAGE_SIZE + idx,
-            "name": l.title or f"Property in {city_name}",
+            "name": listing_display_title(l.title, l.form_data) or f"Property in {city_name}",
             "url": f"{BASE_URL}{l_path}"
         })
 
@@ -696,12 +699,18 @@ def get_city_properties_page(
         for f in city_faqs
     )
 
+    # Links to this city's property-type pages ("Plots in Palwal (103)")
+    type_hub_markup = "\n            ".join(
+        f'<li><a href="/properties/{h["city_slug"]}/{h["type_slug"]}">{html_lib.escape(h["name"])} in {html_lib.escape(city_name)}</a> ({h["count"]})</li>'
+        for h in compute_type_hub_counts(db) if h["city_slug"] == norm_slug
+    ) or f"<li>All property types in {html_lib.escape(city_name)}</li>"
+
     if has_listings:
         items = []
         for l in current_page_listings:
             l_path = get_listing_path(l.id, l.title, l.location, l.form_data)
             p_str = format_price(float(l.price)) if l.price else ""
-            title_text = html_lib.escape(l.title or "Property")
+            title_text = html_lib.escape(listing_display_title(l.title, l.form_data) or "Property")
             loc_text = html_lib.escape(l.location or city_name)
             price_tag = f" - <strong>{html_lib.escape(p_str)}</strong>" if p_str else ""
             items.append(f'<li><a href="{l_path}">{title_text}</a>{price_tag} in {loc_text}</li>')
@@ -724,11 +733,7 @@ def get_city_properties_page(
         <section class="city-types-section">
           <h2>Property Types in {html_lib.escape(city_name)}</h2>
           <ul>
-            <li>Residential Apartments & Flats in {html_lib.escape(city_name)}</li>
-            <li>Independent Houses & Villas in {html_lib.escape(city_name)}</li>
-            <li>Plots & Residential Land in {html_lib.escape(city_name)}</li>
-            <li>Commercial Shops & Offices in {html_lib.escape(city_name)}</li>
-            <li>Agricultural Land & Farmland in {html_lib.escape(city_name)}</li>
+            {type_hub_markup}
           </ul>
         </section>
         <section class="city-listings-section">

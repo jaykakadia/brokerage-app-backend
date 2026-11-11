@@ -262,7 +262,8 @@ def test_non_residential_listings_do_not_inject_bhk(db_session: Session):
     )
     plot_title = compute_listing_seo_title(plot_listing, db_session)
     assert "2BHK" not in plot_title
-    assert "Plot for Sale in HUDA Sector, Palwal - ₹ 1.4 Cr | TradeCall India" == plot_title
+    # The size of the plot leads the title, as it does in the app
+    assert "100 Sq.Yd Plot for Sale in HUDA Sector, Palwal - ₹ 1.4 Cr | TradeCall India" == plot_title
 
     # 4. Residential Flat should keep BHK
     flat_listing = Listing(

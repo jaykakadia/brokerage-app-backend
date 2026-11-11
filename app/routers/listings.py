@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func, or_, and_, cast, String
 
+from app.core.type_hubs import MIN_TYPE_HUB_LISTINGS, PROP_TYPE_ALIASES, compute_type_hub_counts
 from app.core.dependencies import get_current_user, get_current_admin, get_optional_user, get_db
 from app.db.models.listing import Listing, ListingImage
 from app.db.models.lead import LeadReveal
@@ -37,15 +38,6 @@ CARD_FORM_FIELDS = (
     "totalArea", "totalUnit", "builtArea", "builtUnit",
 )
 
-
-# Saved propType values (lowercase) that count as each filter type; older listings used some of the aliases
-PROP_TYPE_ALIASES = {
-    "flat": ("flat", "apartment", "builder_floor", "builder floor", "studio"),
-    "house": ("house", "villa", "kothi", "independent house", "bungalow"),
-    "plot": ("plot", "plots"),
-    "agriculture": ("agriculture", "agricultural", "farm_land", "farm land"),
-    "commercial": ("commercial", "shop", "office", "showroom", "warehouse"),
-}
 
 # Title words used to place a listing that has no saved propType
 PROP_TYPE_TITLE_WORDS = {
@@ -365,6 +357,13 @@ def get_public_stats(db: Session = Depends(get_db)):
         "city_counts": city_counts,
         "registered_users": users,
     }
+
+
+@router.get("/type-hubs")
+def get_type_hubs(db: Session = Depends(get_db)):
+    """City + property-type landing pages that have enough listings to be worth linking ("Plots in Palwal")."""
+    hubs = [h for h in compute_type_hub_counts(db) if h["count"] >= MIN_TYPE_HUB_LISTINGS]
+    return {"status": "success", "data": hubs}
 
 
 @router.api_route("", methods=["GET", "HEAD"], response_model=dict)

@@ -13,6 +13,7 @@ from app.core.cities import slugify_city, slugify_locality
 from app.core.validation_rules import is_buyer_requirement, is_thin_business
 from app.routers.city_pages import load_base_index_html, set_or_replace_canonical, set_or_replace_meta
 from app.routers.sitemap import get_listing_path
+from app.core.type_hubs import TYPE_HUBS, TYPE_TO_HUB_SLUG, canonical_prop_type, listing_display_title
 
 router = APIRouter(tags=["Listing Share Pages"])
 
@@ -115,12 +116,8 @@ def compute_base_seo_title(listing: Any) -> str:
     price_clause = f" - {price_str}" if price_str else ""
 
     if raw_title:
-        clean_title = re.sub(r"\s*\|\s*TradeCall.*$", "", raw_title, flags=re.IGNORECASE).strip()
-        # Strip erroneous BHK prefixes on non-residential properties
-        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Agriculture(?:\s+Land)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
-        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Plot)\b", r"\1", clean_title, flags=re.IGNORECASE)
-        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Commercial(?:\s+Property)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
-        clean_title = re.sub(r"\b\d+\s*BHK\+?\s+(Industrial(?:\s+Land)?)\b", r"\1", clean_title, flags=re.IGNORECASE)
+        # Same public title the app shows: BHK prefixes stripped from land, size in front
+        clean_title = listing_display_title(raw_title, form_data)
         return f"{clean_title}{price_clause}"
 
     location = getattr(listing, "location", "") or ""
@@ -300,7 +297,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         else:
             headline = f"{base_b_name} – {cat_name} in {loc_target}"
     else:
-        headline = listing.title or "Property Listing"
+        headline = listing_display_title(listing.title, form_data) or "Property Listing"
 
     summary_parts = [p for p in [price_str, listing.location] if p]
     summary_str = " · ".join(summary_parts)
@@ -492,7 +489,7 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
             return f'<li><a href="{s_path}">{html_lib.escape(s.title or "Business")} – {html_lib.escape(s_cat)} in {html_lib.escape(s_city)}</a></li>'
         s_p = format_price(float(s.price)) if s.price else ""
         price_tag = f" ({s_p})" if s_p else ""
-        return f'<li><a href="{s_path}">{html_lib.escape(s.title or "Property Listing")}</a>{price_tag}</li>'
+        return f'<li><a href="{s_path}">{html_lib.escape(listing_display_title(s.title, s_fd) or "Property Listing")}</a>{price_tag}</li>'
 
     locality_html = "\n            ".join(_render_listing_li(s) for s in more_in_locality)
     similar_html = "\n            ".join(_render_listing_li(s) for s in similar)
@@ -614,8 +611,15 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
         else f"Similar Properties in {html_lib.escape(city)}"
     )
 
+    # "Plots in Palwal" link to this listing's property-type page
+    type_hub_slug = None if is_business else TYPE_TO_HUB_SLUG.get(canonical_prop_type(form_data) or "")
+    type_hub_link = (
+        f'<a href="/properties/{city_slug}/{type_hub_slug}">{html_lib.escape(TYPE_HUBS[type_hub_slug]["name"])} in {html_lib.escape(city)}</a> |\n        '
+        if type_hub_slug else ""
+    )
+
     hub_links_html = f"""<nav class="related-hub-links" style="margin-top: 12px;">
-        <a href="/properties/{city_slug}">Properties in {html_lib.escape(city)}</a> |
+        {type_hub_link}<a href="/properties/{city_slug}">Properties in {html_lib.escape(city)}</a> |
         <a href="/business-directory/{city_slug}">Businesses in {html_lib.escape(city)}</a> |
         <a href="/business-directory/{city_slug}/property-dealers">Property Dealers in {html_lib.escape(city)}</a> |
         <a href="/business-directory">Business Directory</a> |

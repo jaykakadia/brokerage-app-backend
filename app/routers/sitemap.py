@@ -13,6 +13,7 @@ from app.db.models.listing import Listing
 from app.db.models.blog import Blog
 from app.core.cities import MIN_HUB_LISTINGS, slugify_city, slugify_locality, get_city_display_name
 from app.core.validation_rules import is_buyer_requirement, is_thin_business
+from app.core.type_hubs import MIN_TYPE_HUB_LISTINGS, compute_type_hub_counts
 
 router = APIRouter(tags=["Sitemap"])
 
@@ -190,6 +191,15 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
             items.append({
                 "loc": f"{BASE_URL}/{c_slug}/{l_slug}",
                 "lastmod": _format_date(latest_dt) if latest_dt else None
+            })
+
+    # 3b. Property-type hubs: /properties/{city}/{type} ("Plots in Palwal") with enough listings
+    for hub in compute_type_hub_counts(db):
+        if hub["count"] >= MIN_TYPE_HUB_LISTINGS:
+            city_dts = city_listings.get(hub["city_slug"]) or []
+            items.append({
+                "loc": f"{BASE_URL}/properties/{hub['city_slug']}/{hub['type_slug']}",
+                "lastmod": _format_date(max(city_dts)) if city_dts else None
             })
 
     # 4. Business Directory City & Category Landing Pages (Audit Point 7)
