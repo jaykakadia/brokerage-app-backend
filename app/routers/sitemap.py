@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.db.models.blog import Blog
-from app.core.cities import MIN_HUB_LISTINGS, slugify_city, slugify_locality, get_city_display_name
+from app.core.cities import MIN_HUB_LISTINGS, MIN_LOCALITY_LISTINGS, is_indexable_locality_slug, slugify_city, slugify_locality, get_city_display_name
 from app.core.validation_rules import is_buyer_requirement, is_thin_business
 from app.core.type_hubs import MIN_TYPE_HUB_LISTINGS, compute_type_hub_counts
 
@@ -160,7 +160,7 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
                 "lastmod": _format_date(latest_dt) if latest_dt else None
             })
 
-    # 3. Sub-Locality Hubs (qualifying >= 2 approved listings)
+    # 3. Sub-Locality Hubs (>= MIN_LOCALITY_LISTINGS approved listings, real place names only)
     locality_listings: Dict[tuple, List[datetime]] = defaultdict(list)
     for loc_str, f_data, upd, crt in approved_listings:
         raw_city = None
@@ -186,7 +186,7 @@ def get_hubs_sitemap_urls(db: Session) -> List[Dict[str, Optional[str]]]:
                 locality_listings[(c_slug, l_slug)].append(dt)
 
     for (c_slug, l_slug), dts in locality_listings.items():
-        if len(dts) >= 2 and get_city_display_name(c_slug, db=db):
+        if len(dts) >= MIN_LOCALITY_LISTINGS and is_indexable_locality_slug(l_slug) and get_city_display_name(c_slug, db=db):
             latest_dt = max(dts) if dts else None
             items.append({
                 "loc": f"{BASE_URL}/{c_slug}/{l_slug}",

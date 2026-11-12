@@ -33,7 +33,7 @@ def test_sub_locality_hub_page(client: TestClient, db_session: Session):
     db_session.commit()
     db_session.refresh(user)
 
-    # Seed 2 listings in Omaxe City Phase-II to meet indexable threshold
+    # Seed 3 listings in Omaxe City Phase-II to meet the indexable threshold (MIN_LOCALITY_LISTINGS)
     l1 = Listing(
         user_id=user.id,
         title="3 BHK Luxury Villa in Omaxe City Phase-II, Palwal",
@@ -69,7 +69,17 @@ def test_sub_locality_hub_page(client: TestClient, db_session: Session):
             "city": "Palwal"
         }
     )
-    db_session.add_all([l1, l2])
+    l3 = Listing(
+        user_id=user.id,
+        title="150 Gaj Plot for Sale in Omaxe City Phase-II, Palwal",
+        description="Corner plot, park facing.",
+        price=5500000.0,
+        location="Omaxe City Phase-II, Palwal, Haryana",
+        owner_name="Omaxe Seller",
+        status="approved",
+        form_data={"kind": "owner", "propType": "plot", "plotArea": "150", "plotUnit": "Gaj", "locality": "Omaxe City Phase-II", "city": "Palwal"}
+    )
+    db_session.add_all([l1, l2, l3])
     db_session.commit()
 
     res = client.get("/palwal/omaxe-city-phase-ii")

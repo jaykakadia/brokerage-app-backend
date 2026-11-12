@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
 from app.db.models.listing import Listing
 from app.db.models.page_metadata import PageMetadata
-from app.core.cities import get_city_display_name, slugify_city, MIN_HUB_LISTINGS
+from app.core.cities import get_city_display_name, slugify_city, MIN_HUB_LISTINGS, MIN_LOCALITY_LISTINGS, is_indexable_locality_slug
 from app.routers.sitemap import get_listing_path
 from app.core.type_hubs import MIN_TYPE_HUB_LISTINGS, compute_type_hub_counts, listing_display_title
 
@@ -1099,8 +1099,12 @@ def get_sub_locality_properties_page(
         rendered = re.sub(r'<div\s+id=["\']root["\'][^>]*>.*?</div>', f'<div id="root">{body}</div>', rendered, count=1, flags=re.DOTALL)
         return HTMLResponse(content=rendered, status_code=status.HTTP_404_NOT_FOUND)
 
-    # Sub-locality threshold: >= 2 listings indexable; 1 listing noindex
-    robots_content = "index, follow" if total_listings >= 2 else "noindex, follow"
+    # Thin pages (fewer than MIN_LOCALITY_LISTINGS) and typed addresses ("near X school") are noindex; they stay crawlable
+    robots_content = (
+        "index, follow"
+        if total_listings >= MIN_LOCALITY_LISTINGS and is_indexable_locality_slug(clean_loc)
+        else "noindex, follow"
+    )
     canonical = f"{BASE_URL}/{clean_city}/{clean_loc}"
 
     title = f"Properties in {locality_name}, {city_name} | Buy & Rent | TradeCall India"

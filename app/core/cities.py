@@ -7,6 +7,21 @@ from sqlalchemy.orm import Session
 # Minimum approved listings required for a city hub to be indexable and included in sitemap-hubs
 MIN_HUB_LISTINGS: int = 5
 
+# Minimum approved listings for a locality page (/palwal/omaxe-city) to be indexable and in the sitemap.
+# Localities are free text typed by posters, so pages with 1-2 listings are thin and often near-duplicates.
+MIN_LOCALITY_LISTINGS: int = 3
+
+# Words that mark a typed address ("near MVN girls school", "anywhere in Palwal") rather than a place name
+_ADDRESS_WORDS = {"near", "nearby", "behind", "next", "opposite", "opp", "beside", "adjacent", "anywhere"}
+
+
+def is_indexable_locality_slug(locality_slug: str) -> bool:
+    """False for slugs that are an address or sentence, not a locality name: they get noindex and stay out of the sitemap."""
+    words = [w for w in (locality_slug or "").split("-") if w]
+    if not words or len(words) >= 6:
+        return False
+    return not any(w in _ADDRESS_WORDS for w in words)
+
 # Top Cities matching the frontend TOP_CITIES
 TOP_CITIES: List[Dict[str, str]] = [
     {"name": "Mumbai", "slug": "mumbai", "state": "Maharashtra"},
