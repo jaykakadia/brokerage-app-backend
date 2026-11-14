@@ -258,7 +258,7 @@ def test_audit_improvements_directory_contact_faq_and_business_seo(client: TestC
     assert biz_res.status_code == 200
     biz_html = biz_res.text
     assert "<title>Ashoka Property Faridabad – Property Dealer | TradeCall India</title>" in biz_html
-    assert "<h1>Ashoka Property – Property Dealer in Greater Faridabad</h1>" in biz_html
+    assert "<h1>Ashoka Property – Property Dealer in Greater Faridabad, Faridabad</h1>" in biz_html
     assert "Contact Ashoka Property in Greater Faridabad, Faridabad" in biz_html
     assert 'href="/faridabad/greater-faridabad"' in biz_html
 
@@ -290,3 +290,46 @@ def test_audit_improvements_directory_contact_faq_and_business_seo(client: TestC
     faq_res = client.get("/faq")
     assert faq_res.status_code == 200
     assert '"@type": "FAQPage"' in faq_res.text
+
+
+def test_business_share_title_includes_city_after_locality(client: TestClient, db_session: Session):
+    """WhatsApp/OG preview title must read "... in Sector-79, Gurugram", not stop at the locality."""
+    user = User(
+        email="antalya_owner@tradecall.in",
+        password_hash="fakehash",
+        name="Antalya Owner",
+        phone="9999999922",
+        role="owner",
+        status="active"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    biz = Listing(
+        user_id=user.id,
+        title="Antalya Hills Gurugram",
+        description="",
+        price=0.0,
+        location="Sector-79, Gurugram, Haryana",
+        owner_name="Antalya Owner",
+        status="approved",
+        form_data={
+            "kind": "business",
+            "businessName": "Antalya Hills Gurugram",
+            "category": "Real Estate Agent",
+            "locality": "Sector-79",
+            "city": "Gurugram"
+        }
+    )
+    db_session.add(biz)
+    db_session.commit()
+    db_session.refresh(biz)
+
+    res = client.get(f"/sector-79/antalya-hills-gurugram/TC011P-{biz.id}")
+    assert res.status_code == 200
+    html = res.text
+    expected = "Antalya Hills Gurugram – Real Estate Agent in Sector-79, Gurugram"
+    assert f'<meta property="og:title" content="{expected}"' in html
+    assert f'<meta name="twitter:title" content="{expected}"' in html
+    assert f"<h1>{expected}</h1>" in html

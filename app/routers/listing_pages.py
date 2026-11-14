@@ -289,13 +289,15 @@ def build_listing_html(listing: Listing, base_html: str, db: Session) -> str:
 
     full_title = compute_listing_seo_title(listing, db)
     if is_business:
-        # Audit Point 3 Recommended H1: "Ashoka Property – Property Dealer in Greater Faridabad"
+        # H1 / share-preview title: "Antalya Hills – Real Estate Agent in Sector-79, Gurugram".
+        # Always carry the city after the locality, even when the business name already
+        # mentions the city; skip the clause only if the name already contains it whole.
         base_b_name = (b_name or listing.title or "Business").strip()
-        loc_target = locality if (locality and locality.lower() != city.lower()) else city
-        if loc_target.lower() in base_b_name.lower():
+        loc_phrase = f"{locality}, {city}" if (locality and locality.lower() != city.lower()) else city
+        if loc_phrase.lower() in base_b_name.lower():
             headline = f"{base_b_name} – {cat_name}"
         else:
-            headline = f"{base_b_name} – {cat_name} in {loc_target}"
+            headline = f"{base_b_name} – {cat_name} in {loc_phrase}"
     else:
         headline = listing_display_title(listing.title, form_data) or "Property Listing"
 
