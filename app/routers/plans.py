@@ -73,6 +73,12 @@ def claim_trial_plan(
     if not plan or not plan.is_trial:
         raise HTTPException(status_code=400, detail="Invalid trial plan.")
 
+    if float(plan.price) > 0.0:
+        raise HTTPException(
+            status_code=400,
+            detail="This trial plan requires payment. Please complete payment checkout."
+        )
+
     email_clean = current_user.email.lower().strip()
     existing_claim = db.query(TrialClaim).filter(TrialClaim.email == email_clean).first()
     if existing_claim:

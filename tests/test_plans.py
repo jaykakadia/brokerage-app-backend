@@ -170,3 +170,90 @@ def test_trial_plan_lifecycle_and_re_signup(client, admin_user):
     re_claim_blocked = client.post(f"/api/v1/plans/{trial_plan_id}/claim-trial")
     assert re_claim_blocked.status_code == 409
 
+
+def test_paid_discounted_trial_plan_lifecycle(client, admin_user):
+    from app.services.auth_service import auth_service
+
+    # 1. Admin creates a paid discounted trial plan (e.g. Welcome 1 @ Rs 21)
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    create_paid_trial = client.post("/api/v1/plans", json={
+        "name": "Welcome 1 Introductory",
+        "description": "1 lead for Rs 21",
+        "price": 21.0,
+        "listing_limit": 1,
+        "leads_count": 1,
+        "duration_days": 30,
+        "status": "active",
+        "is_trial": True,
+        "sort_order": 0
+    })
+    assert create_paid_trial.status_code == 200
+    trial_id = create_paid_trial.json()["data"]["id"]
+    client.cookies.clear()
+
+    # 2. Register fresh buyer
+    user_email = "paid.trial.user@example.com"
+    otp = auth_service.generate_and_store_otp(user_email, "register")
+    reg_res = client.post("/api/v1/auth/register", json={
+        "name": "Paid Trial User",
+        "email": user_email,
+        "phone": "9876500099",
+        "password": "Password123!",
+        "otp": otp
+    })
+    assert reg_res.status_code == 200
+
+    # 3. User views plans: Welcome 1 trial plan is visible
+    plans_res = client.get("/api/v1/plans")
+    assert plans_res.status_code == 200
+    ids = [p["id"] for p in plans_res.json()["data"]]
+    assert trial_id in ids
+
+    # 4. User cannot bypass payment via /claim-trial because price > 0
+    free_claim_res = client.post(f"/api/v1/plans/{trial_id}/claim-trial")
+    assert free_claim_res.status_code == 400
+    assert "requires payment" in free_claim_res.json()["detail"].lower()
+
+    # 5. User pays Rs 21 through Cashfree checkout
+    order_res = client.post("/api/v1/payments/create-order", json={"plan_id": trial_id})
+    assert order_res.status_code == 200
+    assert order_res.json()["amount"] == 21.0
+    order_id = order_res.json()["order_id"]
+
+    verify_res = client.post("/api/v1/payments/verify", json={"order_id": order_id})
+    assert verify_res.status_code == 200
+    assert verify_res.json()["status"] == "success"
+
+    # 6. User views plans again: trial plan is now HIDDEN
+    plans_after = client.get("/api/v1/plans")
+    assert plans_after.status_code == 200
+    ids_after = [p["id"] for p in plans_after.json()["data"]]
+    assert trial_id not in ids_after
+
+    # 7. User tries to create payment order for same trial plan again: 409 Conflict
+    dup_order = client.post("/api/v1/payments/create-order", json={"plan_id": trial_id})
+    assert dup_order.status_code == 409
+    assert "once per email" in dup_order.json()["detail"].lower()
+
+    # 8. User deactivates account and signs up again
+    del_res = client.delete("/api/v1/users/profile")
+    assert del_res.status_code == 200
+    client.cookies.clear()
+
+    re_otp = auth_service.generate_and_store_otp(user_email, "register")
+    client.post("/api/v1/auth/register", json={
+        "name": "Paid Trial User Re-registered",
+        "email": user_email,
+        "phone": "9876500099",
+        "password": "NewPassword123!",
+        "otp": re_otp
+    })
+
+    # 9. Re-registered user: trial plan is STILL hidden and cannot be ordered
+    re_plans = client.get("/api/v1/plans")
+    assert trial_id not in [p["id"] for p in re_plans.json()["data"]]
+
+    re_order_blocked = client.post("/api/v1/payments/create-order", json={"plan_id": trial_id})
+    assert re_order_blocked.status_code == 409
+
+

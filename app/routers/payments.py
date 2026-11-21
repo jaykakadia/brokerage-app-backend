@@ -15,6 +15,7 @@ from app.db.models.plan import Plan
 from app.db.models.order import Order
 from app.db.models.listing import Listing
 from app.db.models.setting import SystemSetting
+from app.db.models.trial_claim import TrialClaim
 from app.schemas.order import (
     CreateOrderRequest, CreateOrderResponse,
     VerifyPaymentRequest, VerifyPaymentResponse,
@@ -99,6 +100,18 @@ def _credit_user_plan_and_leads(db: Session, order: Order, payment_id: Optional[
         user.listing_limit += plan.listing_limit
         user.plan_expires_at = _extend_from(user.plan_expires_at, plan.duration_days)
 
+        if plan.is_trial:
+            email_clean = user.email.lower().strip()
+            existing_claim = db.query(TrialClaim).filter(TrialClaim.email == email_clean).first()
+            if not existing_claim:
+                claim = TrialClaim(
+                    email=email_clean,
+                    phone=user.phone.strip() if user.phone else None,
+                    plan_id=plan.id,
+                    user_id=user.id
+                )
+                db.add(claim)
+
     db.commit()
     if user:
         db.refresh(user)
@@ -120,11 +133,20 @@ def create_order(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found or inactive.")
 
-    if plan.is_trial or float(plan.price) == 0.0:
+    if float(plan.price) <= 0.0:
         raise HTTPException(
             status_code=400,
-            detail="This is a free trial plan and does not require payment. Please claim it directly."
+            detail="This plan has no charge and does not require online payment. Please claim it directly."
         )
+
+    if plan.is_trial:
+        email_clean = current_user.email.lower().strip()
+        already_used = db.query(TrialClaim.id).filter(TrialClaim.email == email_clean).first()
+        if already_used:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The trial plan can only be availed once per email address."
+            )
 
     listing_id = None
     if plan.plan_type == "featured":
