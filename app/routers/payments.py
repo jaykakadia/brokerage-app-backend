@@ -120,6 +120,12 @@ def create_order(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found or inactive.")
 
+    if plan.is_trial or float(plan.price) == 0.0:
+        raise HTTPException(
+            status_code=400,
+            detail="This is a free trial plan and does not require payment. Please claim it directly."
+        )
+
     listing_id = None
     if plan.plan_type == "featured":
         listing = db.query(Listing).filter(Listing.id == req.listing_id).first() if req.listing_id else None

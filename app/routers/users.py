@@ -40,6 +40,27 @@ def get_profile(current_user: User = Depends(get_current_user)):
     return APIResponse(status="success", data=UserRead.model_validate(current_user))
 
 
+@router.delete("/users/profile", response_model=MessageResponse)
+def delete_own_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Allows authenticated non-admin users to deactivate/remove their own account."""
+    if current_user.role.lower() == "admin":
+        raise HTTPException(status_code=400, detail="Admin accounts cannot be self-deleted.")
+    now = datetime.now(timezone.utc)
+    current_user.is_deleted = True
+    current_user.deleted_at = now
+    current_user.status = "deleted"
+    user_listings = db.query(Listing).filter(Listing.user_id == current_user.id, Listing.is_deleted == False).all()
+    for l in user_listings:
+        l.is_deleted = True
+        l.deleted_at = now
+        l.status = "deleted"
+    db.commit()
+    return MessageResponse(status="success", message="Your account has been deleted successfully.")
+
+
 @router.put("/users/profile", response_model=MessageResponse)
 def update_profile(
     req: UserProfileUpdate,

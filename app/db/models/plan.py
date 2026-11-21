@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Numeric, Integer, Text, DateTime
+from sqlalchemy import String, Numeric, Integer, Text, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
@@ -18,3 +18,5 @@ class Plan(Base, TimestampMixin, SoftDeleteMixin):
     duration_days: Mapped[int] = mapped_column(Integer, default=365, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_trial: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False, index=True)
+

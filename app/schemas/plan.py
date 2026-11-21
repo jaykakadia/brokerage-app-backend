@@ -16,6 +16,7 @@ class PlanBase(BaseModel):
     duration_days: int = Field(default=365, ge=1)
     status: str = Field(default="active")
     sort_order: int = Field(default=0)
+    is_trial: bool = Field(default=False)
 
 
 class PlanCreate(PlanBase):
@@ -32,6 +33,7 @@ class PlanUpdate(BaseModel):
     duration_days: Optional[int] = None
     status: Optional[str] = None
     sort_order: Optional[int] = None
+    is_trial: Optional[bool] = None
 
 
 class PlanRead(PlanBase):

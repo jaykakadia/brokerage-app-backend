@@ -63,7 +63,7 @@ class AuthService:
         if db:
             if action == "register":
                 existing_email = db.query(User).filter(User.email == email_clean).first()
-                if existing_email:
+                if existing_email and not (existing_email.is_deleted or existing_email.status == "deleted"):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="This email is already registered. Please sign in."
@@ -71,7 +71,7 @@ class AuthService:
                 if phone and phone.strip():
                     phone_clean = phone.strip()
                     existing_phone = db.query(User).filter(User.phone == phone_clean).first()
-                    if existing_phone:
+                    if existing_phone and not (existing_phone.is_deleted or existing_phone.status == "deleted"):
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="This mobile number is already registered. Please sign in."
@@ -231,9 +231,9 @@ class AuthService:
         """Registers a new user and returns (user, token, csrf_token)."""
         email_clean = req.email.lower().strip()
         
-        # Check if user already exists
+        # Check if active user already exists
         existing_email = db.query(User).filter(User.email == email_clean).first()
-        if existing_email:
+        if existing_email and not (existing_email.is_deleted or existing_email.status == "deleted"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This email is already registered. Please sign in."
@@ -241,7 +241,7 @@ class AuthService:
 
         phone_clean = req.phone.strip()
         existing_phone = db.query(User).filter(User.phone == phone_clean).first()
-        if existing_phone:
+        if existing_phone and existing_phone.id != getattr(existing_email, "id", None) and not (existing_phone.is_deleted or existing_phone.status == "deleted"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This mobile number is already registered. Please sign in."
@@ -260,19 +260,36 @@ class AuthService:
                 detail="Invalid or expired OTP."
             )
 
-        new_user = User(
-            name=req.name.strip(),
-            phone=req.phone.strip(),
-            email=email_clean,
-            password_hash=hash_password(req.password),
-            role=req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner",
-            business_name=(req.business_name or "").strip() or None,
-            status="active",
-            listing_limit=1,
-            leads_balance=0,
-            leads_used=0
-        )
-        db.add(new_user)
+        if existing_email and (existing_email.is_deleted or existing_email.status == "deleted"):
+            # Reactivate soft-deleted user with fresh registration profile
+            new_user = existing_email
+            new_user.name = req.name.strip()
+            new_user.phone = req.phone.strip()
+            new_user.password_hash = hash_password(req.password)
+            new_user.role = req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner"
+            new_user.business_name = (req.business_name or "").strip() or None
+            new_user.status = "active"
+            new_user.is_deleted = False
+            new_user.deleted_at = None
+            new_user.listing_limit = 1
+            new_user.leads_balance = 0
+            new_user.leads_used = 0
+            new_user.plan_id = None
+            new_user.plan_expires_at = None
+        else:
+            new_user = User(
+                name=req.name.strip(),
+                phone=req.phone.strip(),
+                email=email_clean,
+                password_hash=hash_password(req.password),
+                role=req.role if req.role in {"Owner", "Agent", "Builder"} else "Owner",
+                business_name=(req.business_name or "").strip() or None,
+                status="active",
+                listing_limit=1,
+                leads_balance=0,
+                leads_used=0
+            )
+            db.add(new_user)
         db.flush()
         claim_assigned_listings(db, new_user)
         db.commit()

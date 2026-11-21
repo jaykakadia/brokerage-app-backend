@@ -77,3 +77,96 @@ def test_plans_flow_and_rbac(client, test_user, admin_user):
     # Verify deleted
     get_res = client.get(f"/api/v1/plans/{plan_id}")
     assert get_res.status_code == 404
+
+
+def test_trial_plan_lifecycle_and_re_signup(client, admin_user):
+    from app.services.auth_service import auth_service
+
+    # 1. Admin creates active trial plan
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    create_trial = client.post("/api/v1/plans", json={
+        "name": "14-Day Free Starter Trial",
+        "description": "3 free leads and 2 property posts",
+        "price": 0.0,
+        "listing_limit": 2,
+        "leads_count": 3,
+        "duration_days": 14,
+        "status": "active",
+        "is_trial": True,
+        "sort_order": 0
+    })
+    assert create_trial.status_code == 200
+    trial_plan_id = create_trial.json()["data"]["id"]
+    assert create_trial.json()["data"]["is_trial"] is True
+    client.cookies.clear()
+
+    # 2. Register fresh user
+    user_email = "trial.tester@example.com"
+    otp = auth_service.generate_and_store_otp(user_email, "register")
+    reg_res = client.post("/api/v1/auth/register", json={
+        "name": "Trial Tester",
+        "email": user_email,
+        "phone": "9876500001",
+        "password": "Password123!",
+        "otp": otp
+    })
+    assert reg_res.status_code == 200
+
+    # 3. User views plans: trial plan IS visible
+    plans_res = client.get("/api/v1/plans")
+    assert plans_res.status_code == 200
+    plan_ids = [p["id"] for p in plans_res.json()["data"]]
+    assert trial_plan_id in plan_ids
+
+    # 4. Cashfree checkout blocked for trial plan
+    cf_res = client.post("/api/v1/payments/create-order", json={"plan_id": trial_plan_id})
+    assert cf_res.status_code == 400
+    assert "claim it directly" in cf_res.json()["detail"].lower()
+
+    # 5. Claim trial plan
+    claim_res = client.post(f"/api/v1/plans/{trial_plan_id}/claim-trial")
+    assert claim_res.status_code == 200
+    claim_data = claim_res.json()["data"]
+    assert claim_data["leads_balance"] == 3
+    assert claim_data["listing_limit"] == 3  # default 1 + 2
+
+    # 6. User views plans again: trial plan is HIDDEN
+    plans_res_after = client.get("/api/v1/plans")
+    assert plans_res_after.status_code == 200
+    plan_ids_after = [p["id"] for p in plans_res_after.json()["data"]]
+    assert trial_plan_id not in plan_ids_after
+
+    # 7. User tries to claim again: 409 Conflict
+    dup_claim = client.post(f"/api/v1/plans/{trial_plan_id}/claim-trial")
+    assert dup_claim.status_code == 409
+
+    # 8. User removes/deactivates their own account
+    del_acc = client.delete("/api/v1/users/profile")
+    assert del_acc.status_code == 200
+    client.cookies.clear()
+
+    # 9. Verify user cannot sign in with deactivated account
+    login_fail = client.post("/api/v1/auth/login", json={"email": user_email, "password": "Password123!"})
+    assert login_fail.status_code == 403
+
+    # 10. User registers again with the same email
+    re_otp = auth_service.generate_and_store_otp(user_email, "register")
+    re_reg = client.post("/api/v1/auth/register", json={
+        "name": "Trial Tester New",
+        "email": user_email,
+        "phone": "9876500001",
+        "password": "NewPassword123!",
+        "otp": re_otp
+    })
+    assert re_reg.status_code == 200
+
+    # 11. Re-registered user views plans: trial plan is STILL NOT SHOWN
+    new_plans_res = client.get("/api/v1/plans")
+    assert new_plans_res.status_code == 200
+    new_plan_ids = [p["id"] for p in new_plans_res.json()["data"]]
+    assert trial_plan_id not in new_plan_ids
+
+    # 12. Direct API call to claim trial plan still fails with 409 Conflict
+    re_claim_blocked = client.post(f"/api/v1/plans/{trial_plan_id}/claim-trial")
+    assert re_claim_blocked.status_code == 409
+
