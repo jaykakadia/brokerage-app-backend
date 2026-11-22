@@ -4,6 +4,7 @@ import io
 import re
 from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_current_admin, get_db
@@ -131,12 +132,26 @@ def list_admin_users(
     if role and role.lower() != "all":
         query = query.filter(User.role == role)
     if search:
-        search_filter = f"%{search.strip()}%"
-        query = query.filter(
-            (User.name.ilike(search_filter)) |
-            (User.email.ilike(search_filter)) |
-            (User.phone.ilike(search_filter))
-        )
+        term = search.strip()
+        search_filter = f"%{term}%"
+        conds = [
+            User.name.ilike(search_filter),
+            User.email.ilike(search_filter),
+            User.phone.ilike(search_filter),
+            User.whatsapp.ilike(search_filter),
+            User.business_name.ilike(search_filter),
+        ]
+        clean_id = term.lstrip("#").strip()
+        if clean_id.isdigit() and int(clean_id) <= 2147483647:
+            conds.append(User.id == int(clean_id))
+
+        digits = re.sub(r"\D", "", term)
+        if len(digits) >= 5:
+            last10 = f"%{digits[-10:] if len(digits) >= 10 else digits}%"
+            conds.append(User.phone.ilike(last10))
+            conds.append(User.whatsapp.ilike(last10))
+
+        query = query.filter(or_(*conds))
     users = query.order_by(User.id.desc()).all()
     return APIResponse(status="success", data=[UserRead.model_validate(u) for u in users])
 

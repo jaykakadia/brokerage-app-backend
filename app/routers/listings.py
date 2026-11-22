@@ -468,10 +468,19 @@ def get_listings(
             User.name.ilike(s_filter),
             User.email.ilike(s_filter),
             User.phone.ilike(s_filter),
+            User.whatsapp.ilike(s_filter),
+            User.business_name.ilike(s_filter),
             cast(Listing.form_data, String).ilike(s_filter)
         ]
         if clean_id.isdigit() and int(clean_id) <= 2147483647:
             conds.append(Listing.id == int(clean_id))
+
+        digits = re.sub(r"\D", "", term)
+        if len(digits) >= 5:
+            last10 = f"%{digits[-10:] if len(digits) >= 10 else digits}%"
+            conds.append(User.phone.ilike(last10))
+            conds.append(User.whatsapp.ilike(last10))
+            conds.append(cast(Listing.form_data, String).ilike(last10))
 
         query = query.filter(or_(*conds))
 

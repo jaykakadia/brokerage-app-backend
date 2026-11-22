@@ -541,3 +541,54 @@ def test_filter_by_owner_role(client, admin_user):
     assert created_ids["Owner"] not in builder_ids
     assert created_ids["Agent"] not in builder_ids
 
+
+def test_listings_search_by_user_whatsapp_and_business(client, admin_user):
+    """Verify listings search by owner WhatsApp (2nd number) and business name."""
+    import json
+    from app.routers.listings import public_listings_cache
+    public_listings_cache.clear()
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    # Create user with whatsapp & business name
+    u_res = client.post("/api/v1/admin/users", json={
+        "name": "Listing Search User",
+        "email": "listing_search_wa@example.com",
+        "phone": "9988112233",
+        "role": "Agent",
+        "password": "Password123!",
+        "whatsapp": "9977665544",
+        "business_name": "Royal Crown Properties"
+    })
+    assert u_res.status_code == 200
+    uid = u_res.json()["data"]["id"]
+
+    # Login as this new user and create an approved listing
+    client.post("/api/v1/auth/login", json={"email": "listing_search_wa@example.com", "password": "Password123!"})
+    res_l = client.post("/api/v1/listings", data={
+        "title": "Exclusive Villa in Palwal City",
+        "location": "Palwal, Haryana",
+        "price": 7500000,
+        "owner_name": "Listing Search User",
+        "owner_role": "Agent",
+        "form_data": json.dumps({"kind": "property", "propType": "villa", "city": "Palwal"})
+    })
+    assert res_l.status_code == 200
+    listing_id = res_l.json()["data"]["id"]
+
+    # Approve listing
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    client.post(f"/api/v1/listings/{listing_id}/status", json={"action": "approve"})
+    public_listings_cache.clear()
+    client.post("/api/v1/auth/logout")
+
+    # Search by WhatsApp (2nd number)
+    search_wa = client.get("/api/v1/listings", params={"search": "9977665544"})
+    assert search_wa.status_code == 200
+    assert any(l["id"] == listing_id for l in search_wa.json()["data"])
+
+    # Search by Business name
+    search_biz = client.get("/api/v1/listings", params={"search": "Royal Crown"})
+    assert search_biz.status_code == 200
+    assert any(l["id"] == listing_id for l in search_biz.json()["data"])
+
+

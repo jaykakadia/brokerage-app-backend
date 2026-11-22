@@ -296,3 +296,47 @@ def test_bulk_user_upload(client, admin_user):
     assert missing_data["skipped_count"] == 2
     assert "Required field(s) missing: Name" in missing_data["errors"][0]["reason"]
     assert "Required field(s) missing: Phone" in missing_data["errors"][1]["reason"]
+
+
+def test_admin_user_search_multi_field(client, admin_user):
+    """Verify admin user search by 2nd number (WhatsApp), business name, ID, and formatted phone."""
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+
+    # Create a user with distinct 1st phone, 2nd phone (whatsapp), and business_name
+    create_res = client.post("/api/v1/admin/users", json={
+        "name": "MultiField User",
+        "email": "multifield@example.com",
+        "phone": "9811122233",
+        "role": "Agent",
+        "password": "Password123!",
+        "whatsapp": "9844455566",
+        "business_name": "Apex Realty Solutions"
+    })
+    assert create_res.status_code == 200
+    user_data = create_res.json()["data"]
+    user_id = user_data["id"]
+
+    # 1. Search by 2nd number (WhatsApp)
+    res_wa = client.get("/api/v1/admin/users", params={"search": "9844455566"})
+    assert res_wa.status_code == 200
+    ids_wa = [u["id"] for u in res_wa.json()["data"]]
+    assert user_id in ids_wa
+
+    # 2. Search by formatted 2nd number (+91 98444 55566)
+    res_wa_fmt = client.get("/api/v1/admin/users", params={"search": "+91 98444 55566"})
+    assert res_wa_fmt.status_code == 200
+    ids_wa_fmt = [u["id"] for u in res_wa_fmt.json()["data"]]
+    assert user_id in ids_wa_fmt
+
+    # 3. Search by business name
+    res_biz = client.get("/api/v1/admin/users", params={"search": "Apex Realty"})
+    assert res_biz.status_code == 200
+    ids_biz = [u["id"] for u in res_biz.json()["data"]]
+    assert user_id in ids_biz
+
+    # 4. Search by ID
+    res_id = client.get("/api/v1/admin/users", params={"search": str(user_id)})
+    assert res_id.status_code == 200
+    ids_id = [u["id"] for u in res_id.json()["data"]]
+    assert user_id in ids_id
+
