@@ -87,10 +87,10 @@ def listing_area_value(form_data: Any) -> Optional[float]:
 def clean_listing_title(raw_title: Optional[str]) -> str:
     """Stored title without brand suffix or the BHK prefixes that older listings put on land."""
     title = re.sub(r"\s*\|\s*TradeCall.*$", "", (raw_title or "").strip(), flags=re.IGNORECASE).strip()
-    title = re.sub(r"\b\d+\s*BHK\+?\s+(Agriculture(?:\s+Land)?)\b", r"\1", title, flags=re.IGNORECASE)
-    title = re.sub(r"\b\d+\s*BHK\+?\s+(Plot)\b", r"\1", title, flags=re.IGNORECASE)
-    title = re.sub(r"\b\d+\s*BHK\+?\s+(Commercial(?:\s+Property)?)\b", r"\1", title, flags=re.IGNORECASE)
-    title = re.sub(r"\b\d+\s*BHK\+?\s+(Industrial(?:\s+Land)?)\b", r"\1", title, flags=re.IGNORECASE)
+    title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Agriculture(?:\s+Land)?)\b", r"\1", title, flags=re.IGNORECASE)
+    title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Plot)\b", r"\1", title, flags=re.IGNORECASE)
+    title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Commercial(?:\s+Property)?)\b", r"\1", title, flags=re.IGNORECASE)
+    title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Industrial(?:\s+Land)?)\b", r"\1", title, flags=re.IGNORECASE)
     return title
 
 
