@@ -310,7 +310,7 @@ def test_listings_pagination_caching_and_card_fields(client, admin_user, test_us
 
     # 4. Test in-memory cache (Requirement 4)
     # The first call should have populated the cache
-    cached_entry = public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None")
+    cached_entry = public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None&or=None")
     assert cached_entry is not None
     assert cached_entry["page"] == 1
 
@@ -322,7 +322,7 @@ def test_listings_pagination_caching_and_card_fields(client, admin_user, test_us
     client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
     client.post(f"/api/v1/listings/{ids[0]}/status", json={"action": "suspended"})
     # Cache must be cleared immediately
-    assert public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None") is None
+    assert public_listings_cache.get("st=approved&p=1&l=2&c=None&s=None&k=None&rc=None&rn=None&pt=None&d=None&min=None&max=None&vo=None&no=None&f=None&or=None") is None
 
 
 def test_business_directory_public_mobile_and_no_email_leak(client, test_user, admin_user):
@@ -492,3 +492,52 @@ def test_prop_type_filter_uses_saved_type_not_title_substrings(client, admin_use
     assert titles_for("agriculture") == {"Agriculture Land for Sale in Village Khambi, Palwal"}
     assert titles_for("plot") == {"Plot for Sale in Village Kithwari, Palwal"}
     assert titles_for("commercial") == {"Shop in Village Market"}
+
+
+def test_filter_by_owner_role(client, admin_user):
+    """Verify owner_role filter (Owner, Agent, Builder) returns only matching listings."""
+    import json
+    from app.routers.listings import public_listings_cache
+    public_listings_cache.clear()
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    roles = [("Listing By Owner", "Owner"), ("Listing By Agent", "Agent"), ("Listing By Builder", "Builder")]
+    created_ids = {}
+    for title, role in roles:
+        res = client.post("/api/v1/listings", data={
+            "title": title, "location": "Palwal, Haryana", "price": 500000,
+            "owner_name": f"{role} Name", "owner_role": role,
+            "form_data": json.dumps({"kind": "property", "propType": "flat", "city": "Palwal"})
+        })
+        assert res.status_code == 200
+        l_id = res.json()["data"]["id"]
+        client.post(f"/api/v1/listings/{l_id}/status", json={"action": "approve"})
+        created_ids[role] = l_id
+
+    public_listings_cache.clear()
+    client.post("/api/v1/auth/logout")
+
+    # Filter Owner
+    res_owner = client.get("/api/v1/listings", params={"owner_role": "Owner"})
+    assert res_owner.status_code == 200
+    owner_ids = [l["id"] for l in res_owner.json()["data"]]
+    assert created_ids["Owner"] in owner_ids
+    assert created_ids["Agent"] not in owner_ids
+    assert created_ids["Builder"] not in owner_ids
+
+    # Filter Agent
+    res_agent = client.get("/api/v1/listings", params={"owner_role": "Agent"})
+    assert res_agent.status_code == 200
+    agent_ids = [l["id"] for l in res_agent.json()["data"]]
+    assert created_ids["Agent"] in agent_ids
+    assert created_ids["Owner"] not in agent_ids
+    assert created_ids["Builder"] not in agent_ids
+
+    # Filter Builder
+    res_builder = client.get("/api/v1/listings", params={"owner_role": "Builder"})
+    assert res_builder.status_code == 200
+    builder_ids = [l["id"] for l in res_builder.json()["data"]]
+    assert created_ids["Builder"] in builder_ids
+    assert created_ids["Owner"] not in builder_ids
+    assert created_ids["Agent"] not in builder_ids
+

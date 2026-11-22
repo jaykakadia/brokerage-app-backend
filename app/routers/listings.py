@@ -384,6 +384,7 @@ def get_listings(
     verified_only: Optional[bool] = Query(None),
     new_only: Optional[bool] = Query(None),
     is_featured: Optional[bool] = Query(None),
+    owner_role: Optional[str] = Query(None),
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
@@ -399,7 +400,7 @@ def get_listings(
     )
     cache_key = (
         f"st={status}&p={page}&l={limit}&c={city}&s={search}&k={kind}&rc={ref_code}&rn={ref_name}&"
-        f"pt={prop_type}&d={deal}&min={min_price}&max={max_price}&vo={verified_only}&no={new_only}&f={is_featured}"
+        f"pt={prop_type}&d={deal}&min={min_price}&max={max_price}&vo={verified_only}&no={new_only}&f={is_featured}&or={owner_role}"
     )
 
     if is_cacheable:
@@ -431,6 +432,10 @@ def get_listings(
     elif not user_id and not is_admin:
         # Unauthenticated or non-admin users default to approved when not querying specific user
         query = query.filter(Listing.status == "approved")
+
+    # Owner role filter (Owner, Agent, Builder)
+    if owner_role and owner_role.lower() != "all":
+        query = query.filter(func.lower(Listing.owner_role) == owner_role.lower())
 
     if not is_admin and (not status or status.lower() != "deleted"):
         query = query.filter(Listing.is_deleted == False)
