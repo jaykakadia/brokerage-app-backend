@@ -58,6 +58,20 @@ class TestLocalityValidation:
             assert not is_valid, f"Expected '{phrase}' to be rejected as distance phrase"
             assert "distance" in err.lower() or "sector" in err.lower()
 
+    def test_allow_locality_with_distance_landmark_phrases(self):
+        valid_with_landmarks = [
+            ("Uttam Vihar, 500 Meter Away from Bus Stand", "Uttam Vihar"),
+            ("Uttam Vihar, 500 Meter Away from Highway", "Uttam Vihar"),
+            ("Uttam Vihar - 2 km from bypass", "Uttam Vihar"),
+            ("Sector 14 near Metro Station", "Sector 14"),
+            ("Green Park (Opposite Bus Stand)", "Green Park"),
+        ]
+        for raw, expected_clean in valid_with_landmarks:
+            is_valid, err = validate_locality(raw)
+            assert is_valid, f"Expected '{raw}' to be valid, got: {err}"
+            clean = clean_and_normalize_locality(raw)
+            assert clean == expected_clean, f"Expected clean '{expected_clean}', got '{clean}'"
+
     def test_reject_urls_and_contacts(self):
         contacts = [
             "Sector 2 www.tradecall.in",

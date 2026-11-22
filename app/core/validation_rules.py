@@ -36,7 +36,8 @@ JUNK_LOCALITY_WORDS = {
 # Rejects phrases like "500-mtr-away-from-highway", "2 km from bypass", "opposite to bus stand"
 # BUT preserves legitimate names containing Road or Highway (e.g. "South Delhi", "Nahar Road", "Mathura Road")
 DISTANCE_PHRASE_REGEX = re.compile(
-    r'\b(?:\d+[\s-]*(?:mtr|meter|metre|km|kilometer|feet|ft|mile)s?[\s-]*(?:away|from|off)?(?:[\s-]+(?:from|to|near|off))?[\s-]*(?:highway|bypass|station|metro|road|expressway|stand|airport))\b'
+    r'\b(?:\d+[\s-]*(?:mtr|meter|metre|km|kilometer|feet|ft|mile)s?[\s-]*(?:away|from|off)?(?:[\s-]+(?:from|to|near|off))?[\s-]*(?:highway|bypass|station|metro|road|bus|expressway|stand|airport))\b'
+    r'|(?:\b(?:\d+[\s-]*(?:mtr|meter|metre|km|kilometer|feet|ft|mile)s?[\s-]*(?:away|from|off))\b)'
     r'|(?:\b(?:opposite|opp|behind|near|beside|adjacent)[\s-]+(?:to[\s-]+)?(?:the[\s-]+)?(?:highway|station|metro|road|bus|expressway|stand|bypass|airport)\b)',
     re.IGNORECASE
 )
@@ -56,15 +57,66 @@ URL_IN_LOCALITY_REGEX = re.compile(
 PRESERVED_ACRONYMS = {"RPS", "NH", "BPTP", "HUDA", "Omaxe", "SRS", "VIP", "TDI", "NCR", "DLF", "BHK", "PO"}
 
 
+def _is_valid_locality_candidate(cand: str) -> bool:
+    if not cand:
+        return False
+    norm = cand.strip(" ,-();/.")
+    if len(norm) < 2 or len(norm) > 60:
+        return False
+    if not any(c.isalpha() for c in norm):
+        return False
+    lower = norm.lower()
+    compact = re.sub(r'[\s\-_]+', '', lower)
+    if lower in JUNK_LOCALITY_WORDS or compact in {"anywhere", "all", "any", "none", "na", "null", "nil", "test", "testing", "demo", "unknown", "xyz", "asdf"}:
+        return False
+    if URL_IN_LOCALITY_REGEX.search(norm) or PHONE_IN_LOCALITY_REGEX.search(norm):
+        return False
+    if DISTANCE_PHRASE_REGEX.search(norm):
+        return False
+    return True
+
+
+def extract_primary_locality(raw: Optional[str]) -> str:
+    """
+    Extracts the core sector/colony/area name when the user provides distance or landmark details
+    (e.g., 'Uttam Vihar, 500 Meter Away from Bus Stand' -> 'Uttam Vihar').
+    Returns empty string if the input consists only of distance phrases without a valid locality name.
+    """
+    if not raw:
+        return ""
+    text = raw.strip()
+    if not DISTANCE_PHRASE_REGEX.search(text):
+        return text
+
+    # 1. Delimiter split: check if text before comma, semicolon, or parenthesis is a valid locality
+    parts = re.split(r"[,;(]", text)
+    if parts:
+        prefix = parts[0].strip(" ,-();/.")
+        if _is_valid_locality_candidate(prefix):
+            return prefix
+
+    # 2. Text before the distance phrase
+    m = DISTANCE_PHRASE_REGEX.search(text)
+    if m and m.start() > 0:
+        prefix = text[:m.start()].strip(" ,-();/.")
+        if _is_valid_locality_candidate(prefix):
+            return prefix
+
+    return ""
+
+
 def clean_and_normalize_locality(value: Optional[str]) -> str:
     """
     Cleans up whitespace, removes accidental quotes/punctuation,
     and formats words cleanly without ruining legitimate acronyms.
+    Extracts primary locality if distance phrases or landmarks are present.
     """
     if not value:
         return ""
+    primary = extract_primary_locality(value)
+    target = primary if primary else value
     # Replace multiple hyphens/underscores/spaces with single space
-    cleaned = re.sub(r'[\s_\-]+', ' ', value).strip(" ,.-;/")
+    cleaned = re.sub(r'[\s_\-]+', ' ', target).strip(" ,.-;/()")
     if not cleaned:
         return ""
 
@@ -84,9 +136,10 @@ def clean_and_normalize_locality(value: Optional[str]) -> str:
 
 def validate_locality(value: Optional[str], city: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
-    Validates locality field against junk values, distance phrases, URLs, and phone numbers.
+    Validates locality field against junk values, pure distance phrases, URLs, and phone numbers.
     Returns (is_valid, error_message).
-    Legitimate names like 'South Delhi', 'Nahar Road', 'NH-19' pass cleanly.
+    Legitimate names like 'South Delhi', 'Nahar Road', 'NH-19', and names with landmarks
+    like 'Uttam Vihar, 500 Meter Away from Bus Stand' pass cleanly.
     """
     if not value or not value.strip():
         return False, "Locality is required."
@@ -111,10 +164,12 @@ def validate_locality(value: Optional[str], city: Optional[str] = None) -> Tuple
         return False, "Locality cannot contain phone numbers."
 
     if DISTANCE_PHRASE_REGEX.search(raw):
-        return False, (
-            "Please provide a specific locality/sector name instead of distance phrases "
-            "(e.g., use 'Sector 2' or 'Nahar Road' instead of '500 mtr away from highway')."
-        )
+        primary = extract_primary_locality(raw)
+        if not primary or not _is_valid_locality_candidate(primary):
+            return False, (
+                "Please provide a specific locality/sector name instead of distance phrases "
+                "(e.g., use 'Sector 2' or 'Nahar Road' instead of '500 mtr away from highway')."
+            )
 
     return True, None
 
