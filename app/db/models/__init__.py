@@ -17,6 +17,7 @@ from app.db.models.page_metadata import PageMetadata
 from app.db.models.audit_log import AuditLog
 from app.db.models.support_chat import SupportConversation, SupportMessage
 from app.db.models.trial_claim import TrialClaim
+from app.db.models.review import Review
 
 __all__ = [
     "Base",
@@ -40,5 +41,6 @@ __all__ = [
     "SupportConversation",
     "SupportMessage",
     "TrialClaim",
+    "Review",
 ]
 
