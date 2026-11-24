@@ -228,13 +228,13 @@ class StorageService:
             return content, detected_ext
         return optimized, "webp"
 
-    async def validate_and_save_listing_image(
+    async def validate_and_save_image(
         self,
-        listing_id: int,
+        prefix: str,
         file: UploadFile
     ) -> Tuple[str, str, int, str]:
         """
-        Validates an uploaded image and saves it to the configured storage backend.
+        Validates an uploaded image and saves it under `<prefix>/<uuid>.<ext>`.
         Returns: (storage_key, original_filename, file_size, mime_type)
         """
         # Validate extension
@@ -271,10 +271,19 @@ class StorageService:
         content, detected_ext = await run_in_threadpool(self._optimize_image, content, detected_ext)
 
         # Generate secure UUID filename
-        key = f"listings/{int(listing_id)}/{uuid.uuid4().hex}.{detected_ext}"
+        clean_prefix = prefix.strip("/")
+        key = f"{clean_prefix}/{uuid.uuid4().hex}.{detected_ext}"
         mime_type = "image/jpeg" if detected_ext == "jpg" else f"image/{detected_ext}"
         await run_in_threadpool(self.backend.save, key, content, mime_type)
         return key, filename, len(content), mime_type
+
+    async def validate_and_save_listing_image(
+        self,
+        listing_id: int,
+        file: UploadFile
+    ) -> Tuple[str, str, int, str]:
+        """Validates an uploaded listing image and saves it under `listings/<listing_id>/`."""
+        return await self.validate_and_save_image(f"listings/{int(listing_id)}", file)
 
     def delete_file(self, path: str) -> bool:
         """Deletes a single stored file. Accepts a storage key or a legacy "/uploads/..." path."""

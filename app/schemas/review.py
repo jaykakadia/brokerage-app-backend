@@ -22,6 +22,7 @@ class ReviewRead(BaseModel):
     user_name: Optional[str] = None
     rating: int
     comment: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
     status: str
     created_at: datetime
     updated_at: datetime

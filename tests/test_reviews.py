@@ -116,3 +116,47 @@ def test_reviews_full_lifecycle(client, admin_user, test_user, db_session):
 
     pub_res3 = client.get(f"/api/v1/listings/{listing.id}/reviews")
     assert pub_res3.json()["data"]["total_reviews"] == 0
+
+
+def test_reviews_image_upload(client, admin_user, test_user, db_session):
+    """Registered user can attach images to a review via multipart/form-data."""
+    import io
+    from PIL import Image
+
+    listing = Listing(
+        user_id=admin_user.id,
+        title="Sunrise Residency",
+        location="Palwal, Haryana",
+        price=2500000.0,
+        owner_name="Sunrise Group",
+        owner_role="Builder",
+        reference_code="SUN001",
+        status="approved",
+        form_data={"kind": "property", "city": "Palwal"},
+    )
+    db_session.add(listing)
+    db_session.commit()
+    db_session.refresh(listing)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 60), color=(12, 98, 83)).save(buf, format="PNG")
+    buf.seek(0)
+
+    _login(client, test_user, "password123")
+    res = client.post(
+        f"/api/v1/listings/{listing.id}/reviews",
+        data={"rating": "5", "comment": "Great site visit photos!"},
+        files=[("files", ("site.png", buf.getvalue(), "image/png"))],
+    )
+    assert res.status_code == 200
+    rev = res.json()["data"]
+    assert len(rev["images"]) == 1
+    assert "/reviews/" in rev["images"][0]
+
+    # Approve and verify public response includes images
+    _login(client, admin_user, "adminpass123")
+    assert client.patch(f"/api/v1/admin/reviews/{rev['id']}/status", json={"status": "approved"}).status_code == 200
+
+    pub = client.get(f"/api/v1/listings/{listing.id}/reviews")
+    assert pub.status_code == 200
+    assert pub.json()["data"]["reviews"][0]["images"] == rev["images"]

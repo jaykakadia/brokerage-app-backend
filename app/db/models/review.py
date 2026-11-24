@@ -1,5 +1,5 @@
-from typing import Optional
-from sqlalchemy import Integer, Text, String, ForeignKey, UniqueConstraint
+from typing import Any, Optional
+from sqlalchemy import Integer, Text, String, ForeignKey, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
@@ -16,6 +16,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 to 5
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    images: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), default="pending", nullable=False, index=True
     )  # pending, approved, rejected

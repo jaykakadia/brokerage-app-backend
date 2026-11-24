@@ -1,5 +1,6 @@
+import json
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, or_
 
@@ -16,8 +17,17 @@ from app.schemas.review import (
     ListingReviewsResponse,
     AdminReviewRead,
 )
+from app.services.storage_service import public_url, storage_service, to_key
+
+MAX_REVIEW_IMAGES = 5
 
 router = APIRouter(tags=["Reviews"])
+
+
+def _public_review_images(raw: Optional[list]) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+    return [public_url(str(p)) for p in raw if p]
 
 
 def _to_review_read(r: Review) -> ReviewRead:
@@ -29,6 +39,7 @@ def _to_review_read(r: Review) -> ReviewRead:
         user_name=user_name,
         rating=r.rating,
         comment=r.comment,
+        images=_public_review_images(r.images),
         status=r.status,
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -58,6 +69,7 @@ def _to_admin_review_read(r: Review) -> AdminReviewRead:
         listing_kind=listing_kind,
         rating=r.rating,
         comment=r.comment,
+        images=_public_review_images(r.images),
         status=r.status,
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -124,9 +136,9 @@ def get_listing_reviews(
 
 
 @router.post("/api/v1/listings/{listing_id}/reviews", response_model=APIResponse[ReviewRead])
-def submit_listing_review(
+async def submit_listing_review(
     listing_id: int,
-    req: ReviewCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -137,11 +149,63 @@ def submit_listing_review(
     if listing.user_id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot review your own listing.")
 
+    content_type = (request.headers.get("content-type") or "").lower()
+    uploaded_files: List[UploadFile] = []
+    keep_images_keys: Optional[List[str]] = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        try:
+            raw_rating = int(str(form.get("rating", "")).strip())
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Rating must be an integer between 1 and 5.")
+        raw_comment = form.get("comment")
+        req = ReviewCreate(rating=raw_rating, comment=str(raw_comment) if raw_comment is not None else None)
+        uploaded_files = [f for f in form.getlist("files") if hasattr(f, "filename") and f.filename]
+        raw_keep = form.get("keep_images")
+        if raw_keep is not None:
+            try:
+                parsed_keep = json.loads(str(raw_keep))
+                if isinstance(parsed_keep, list):
+                    keep_images_keys = [to_key(str(u)) for u in parsed_keep if u]
+            except (ValueError, TypeError):
+                keep_images_keys = []
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=422, detail="Invalid JSON request body.")
+        req = ReviewCreate.model_validate(body)
+
     existing = (
         db.query(Review)
         .filter(Review.listing_id == listing_id, Review.user_id == current_user.id)
         .first()
     )
+
+    old_keys: List[str] = list(existing.images) if (existing and isinstance(existing.images, list)) else []
+    if keep_images_keys is not None:
+        kept = [k for k in old_keys if k in set(keep_images_keys)]
+    elif "multipart/form-data" in content_type:
+        kept = list(old_keys)
+    else:
+        kept = list(old_keys)
+
+    if len(kept) + len(uploaded_files) > MAX_REVIEW_IMAGES:
+        raise HTTPException(status_code=400, detail=f"You can attach up to {MAX_REVIEW_IMAGES} images per review.")
+
+    new_keys: List[str] = []
+    for f in uploaded_files:
+        key, _, _, _ = await storage_service.validate_and_save_image(f"reviews/{int(listing_id)}", f)
+        new_keys.append(key)
+
+    final_keys = kept + new_keys
+    removed_keys = [k for k in old_keys if k not in set(kept)]
+    for k in removed_keys:
+        try:
+            storage_service.delete_file(k)
+        except Exception:
+            pass
 
     is_admin = current_user.role.lower() == "admin"
     initial_status = "approved" if is_admin else "pending"
@@ -149,6 +213,7 @@ def submit_listing_review(
     if existing:
         existing.rating = req.rating
         existing.comment = req.comment.strip() if req.comment else None
+        existing.images = final_keys
         existing.status = initial_status
         existing.is_deleted = False
         db.commit()
@@ -161,6 +226,7 @@ def submit_listing_review(
         user_id=current_user.id,
         rating=req.rating,
         comment=req.comment.strip() if req.comment else None,
+        images=final_keys,
         status=initial_status,
     )
     db.add(new_review)
