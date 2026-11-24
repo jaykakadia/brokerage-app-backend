@@ -451,7 +451,8 @@ def get_listings(
     # Search filter (title / description / location / user name, email, phone / owner / ID)
     if search:
         term = search.strip()
-        s_filter = f"%{term}%"
+        upper = term.upper()
+        is_explicit_id = term.startswith("#") or upper.startswith("TC011P-") or upper.startswith("TC-")
 
         clean_id = term.lstrip("#").strip()
         if clean_id.upper().startswith("TC011P-"):
@@ -459,30 +460,35 @@ def get_listings(
         elif clean_id.upper().startswith("TC-"):
             clean_id = clean_id[3:]
 
-        conds = [
-            Listing.title.ilike(s_filter),
-            Listing.location.ilike(s_filter),
-            Listing.description.ilike(s_filter),
-            Listing.owner_name.ilike(s_filter),
-            Listing.assigned_email.ilike(s_filter),
-            User.name.ilike(s_filter),
-            User.email.ilike(s_filter),
-            User.phone.ilike(s_filter),
-            User.whatsapp.ilike(s_filter),
-            User.business_name.ilike(s_filter),
-            cast(Listing.form_data, String).ilike(s_filter)
-        ]
-        if clean_id.isdigit() and int(clean_id) <= 2147483647:
-            conds.append(Listing.id == int(clean_id))
+        if is_explicit_id and clean_id.isdigit() and int(clean_id) <= 2147483647:
+            # Explicit ID lookup (#230, TC011P-230): match only that exact listing, not hashtags in descriptions
+            query = query.filter(Listing.id == int(clean_id))
+        else:
+            s_filter = f"%{term}%"
+            conds = [
+                Listing.title.ilike(s_filter),
+                Listing.location.ilike(s_filter),
+                Listing.description.ilike(s_filter),
+                Listing.owner_name.ilike(s_filter),
+                Listing.assigned_email.ilike(s_filter),
+                User.name.ilike(s_filter),
+                User.email.ilike(s_filter),
+                User.phone.ilike(s_filter),
+                User.whatsapp.ilike(s_filter),
+                User.business_name.ilike(s_filter),
+                cast(Listing.form_data, String).ilike(s_filter)
+            ]
+            if clean_id.isdigit() and int(clean_id) <= 2147483647:
+                conds.append(Listing.id == int(clean_id))
 
-        digits = re.sub(r"\D", "", term)
-        if len(digits) >= 5:
-            last10 = f"%{digits[-10:] if len(digits) >= 10 else digits}%"
-            conds.append(User.phone.ilike(last10))
-            conds.append(User.whatsapp.ilike(last10))
-            conds.append(cast(Listing.form_data, String).ilike(last10))
+            digits = re.sub(r"\D", "", term)
+            if len(digits) >= 5:
+                last10 = f"%{digits[-10:] if len(digits) >= 10 else digits}%"
+                conds.append(User.phone.ilike(last10))
+                conds.append(User.whatsapp.ilike(last10))
+                conds.append(cast(Listing.form_data, String).ilike(last10))
 
-        query = query.filter(or_(*conds))
+            query = query.filter(or_(*conds))
 
     # Reference code filter
     if ref_code:

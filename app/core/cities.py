@@ -78,6 +78,7 @@ CITY_SLUG_MAP: Dict[str, str] = {
     "aligarh": "Aligarh",
     "moradabad": "Moradabad",
     "gorakhpur": "Gorakhpur",
+    "barabanki": "Barabanki",
     "nagpur": "Nagpur",
     "thane": "Thane",
     "nashik": "Nashik",
@@ -195,6 +196,7 @@ ALIASES: Dict[str, str] = {
     "mewat": "nuh-mewat",
     "vrindavan": "mathura-vrindavan",
     "vrindaban": "mathura-vrindavan",
+    "bara-banki": "barabanki",
 }
 
 

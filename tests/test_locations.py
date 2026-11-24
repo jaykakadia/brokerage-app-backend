@@ -37,3 +37,10 @@ def test_locations_flow(client, admin_user, test_user):
     # 6. Delete location
     del_res = client.delete(f"/api/v1/locations/{loc_id}")
     assert del_res.status_code == 200
+
+
+def test_barabanki_city_page_and_slug(client):
+    """Barabanki and Fatehpur (Barabanki) slugs both resolve cleanly instead of 404."""
+    assert client.get("/properties/barabanki").status_code == 200
+    assert client.get("/properties/bara-banki").status_code == 200
+    assert client.get("/properties/fatehpur-barabanki").status_code == 200

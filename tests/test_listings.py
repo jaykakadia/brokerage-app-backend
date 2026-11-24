@@ -592,3 +592,46 @@ def test_listings_search_by_user_whatsapp_and_business(client, admin_user):
     assert any(l["id"] == listing_id for l in search_biz.json()["data"])
 
 
+def test_listings_exact_hash_id_search(client, admin_user):
+    """Searching #<id> or TC011P-<id> must match only that exact listing ID, not description hashtags like #<id>00."""
+    import json
+    from app.routers.listings import public_listings_cache
+    public_listings_cache.clear()
+
+    client.post("/api/v1/auth/login", json={"email": admin_user.email, "password": "adminpass123"})
+    res_target = client.post("/api/v1/listings", data={
+        "title": "House in Palwal",
+        "location": "Palwal, Haryana",
+        "price": 5000000,
+        "owner_name": "Owner A",
+        "description": "Nice house",
+        "form_data": json.dumps({"kind": "property", "propType": "house", "city": "Palwal"})
+    })
+    assert res_target.status_code == 200
+    target_id = res_target.json()["data"]["id"]
+
+    res_other = client.post("/api/v1/listings", data={
+        "title": "Flat in Zirakpur",
+        "location": "Zirakpur, Punjab",
+        "price": 6000000,
+        "owner_name": "Owner B",
+        "description": f"Spacious flat #{target_id}00SqftFlatZirakpur ready to move",
+        "form_data": json.dumps({"kind": "property", "propType": "flat", "city": "Zirakpur"})
+    })
+    assert res_other.status_code == 200
+    other_id = res_other.json()["data"]["id"]
+
+    for lid in (target_id, other_id):
+        client.post(f"/api/v1/listings/{lid}/status", json={"action": "approve"})
+    public_listings_cache.clear()
+
+    res_hash = client.get("/api/v1/listings", params={"search": f"#{target_id}", "status": "all"})
+    assert res_hash.status_code == 200
+    returned_ids = [item["id"] for item in res_hash.json()["data"]]
+    assert returned_ids == [target_id]
+
+    res_tc = client.get("/api/v1/listings", params={"search": f"TC011P-{target_id}", "status": "all"})
+    assert res_tc.status_code == 200
+    assert [item["id"] for item in res_tc.json()["data"]] == [target_id]
+
+
