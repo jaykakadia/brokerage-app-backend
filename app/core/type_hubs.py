@@ -91,6 +91,12 @@ def clean_listing_title(raw_title: Optional[str]) -> str:
     title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Plot)\b", r"\1", title, flags=re.IGNORECASE)
     title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Commercial(?:\s+Property)?)\b", r"\1", title, flags=re.IGNORECASE)
     title = re.sub(r"\b\d+[\s+]*BHK\+?\s+(Industrial(?:\s+Land)?)\b", r"\1", title, flags=re.IGNORECASE)
+    title = re.sub(
+        r"\bin ((?:near|next to|opp\.?|opposite|behind|beside|adj\.?|adjacent|from|between|along|towards|on|at|around|via)\b)",
+        r"- \1",
+        title,
+        flags=re.IGNORECASE,
+    )
     return title
 
 

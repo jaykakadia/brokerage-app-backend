@@ -54,6 +54,9 @@ def test_display_title_leads_with_area():
     # Old land titles lose the BHK prefix
     agri = {"propType": "agriculture", "agriArea": "6", "agriUnit": "Acre"}
     assert listing_display_title("2BHK Agriculture Land for Sale in Khambi", agri) == "6 Acre Agriculture Land for Sale in Khambi"
+    # Preposition-led localities swap "in" for "-"
+    buyer_agri = {"kind": "buyer", "propType": "agriculture", "agriArea": "1", "agriUnit": "Bigha"}
+    assert listing_display_title("Looking to Buy Agriculture Land in From Bamroli Katara To Kundol, Agra", buyer_agri) == "Looking to Buy 1 Bigha Agriculture Land - From Bamroli Katara To Kundol, Agra"
 
 
 def test_type_hub_page_is_indexable_and_built_from_listings(client: TestClient, db_session: Session):
